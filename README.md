@@ -61,6 +61,27 @@ syncfit-backend/
 
 Python 3.11+, FastAPI, WebSockets, Pydantic, imports `syncfit-core` and `syncfit-ai-reasoning`.
 
+## Tasks
+
+> **Language: Python 3.11+ (mandatory).** This service is written in Python; no other language is allowed for the backend.
+
+### Requirements
+
+- [ ] Scaffold the FastAPI application and configuration loading.
+- [ ] Implement REST endpoints for persistence and queries.
+- [ ] Implement the OpenAPI spec consumed from `syncfit-contracts`.
+- [ ] Implement WebSocket ingestion of JSON telemetry at < 50 ms latency.
+- [ ] Implement the **Time-Series Segment Tree** (O(log n) range min/max/mean).
+- [ ] Implement the **Priority Queue / Max-Heap** (O(1) alert dispatch).
+- [ ] Implement the **Directed State Graph** (phase and trimester transitions).
+- [ ] Implement the **Ring Buffer** (O(1) ingestion of the 100 Hz stream).
+- [ ] Implement recommended extras: HashMap session map, deque ingest queue, LRU Cache, alert de-duplication.
+- [ ] Orchestrate `core → reasoning → adapted routine`.
+- [ ] Implement the persistence layer for sessions, telemetry and prescriptions.
+- [ ] Validate every payload against `syncfit-contracts`.
+- [ ] Write integration tests and load tests.
+- [ ] Provide a Dockerfile consumable by `syncfit-infra`.
+
 ## Related repositories
 
 - [`syncfit-contracts`](../syncfit-contracts) — request/response schemas.
