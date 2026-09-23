@@ -32,6 +32,13 @@ jobs:
           path: deps/syncfit-core
           ref: main
           token: ${{ secrets.SYNCFIT_TOKEN }}
+      - name: Checkout sibling syncfit-simulator
+        uses: actions/checkout@v4
+        with:
+          repository: Jenifrutica/syncfit-simulator
+          path: deps/syncfit-simulator
+          ref: main
+          token: ${{ secrets.SYNCFIT_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -39,6 +46,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ./deps/syncfit-contracts/python ./deps/syncfit-core
+          pip install --no-deps -e ./deps/syncfit-simulator/py
           pip install --no-deps -e .
           pip install fastapi "uvicorn[standard]" pydantic pytest httpx numpy
       - name: Test
