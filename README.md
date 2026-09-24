@@ -117,3 +117,21 @@ calendar, routines, supplements, symptoms, sharing, stats, loads, machines).
 available machines scale weights; body comp + goal feed macros.
 
 **Run tests.** `pytest` (needs contracts/core/simulator/database installed).
+
+
+## Roles, super admin and gyms
+
+- **Roles** on `users.role`: `ATHLETE`, `GYM_ADMIN`, `SUPER_ADMIN`. `/auth/me`,
+  login and register return `role`.
+- **Super admin bootstrap (env):** `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`,
+  `SUPERADMIN_NAME`. Seeded idempotently on startup.
+- **Admin API:** `POST/GET /admin/gym-admins` (super admin creates/lists gym
+  admins), `GET /admin/gyms`, `GET /admin/me`.
+- **Gyms:** creation and machine management require `require_gym_admin`
+  (`POST /gyms`, `POST /gyms/{id}/machines`, `GET /gyms/{id}/qr.png`). Athletes
+  join with `POST /gyms/join {code}`. Machine `purpose`/`weight_factor` are
+  inferred by the AI from the machine name (`syncfit-ai` `analyze_machine`).
+- **AI-first symptoms:** no keyword blocking; only an absolute contraindication
+  yields a gentle, still-active routine; `k_load` is preserved.
+- Example: super admin creates `nico` (Asgard) and `daniel` (Valhalla); each gym
+  admin creates their own gym(s) and manages machines.
