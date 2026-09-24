@@ -55,6 +55,6 @@ jobs:
           pip install ./deps/syncfit-contracts/python ./deps/syncfit-core ./deps/syncfit-database
           pip install --no-deps -e ./deps/syncfit-simulator/py
           pip install --no-deps -e .
-          pip install fastapi "uvicorn[standard]" pydantic pyjwt sqlalchemy pytest httpx numpy
+          pip install fastapi "uvicorn[standard]" pydantic pyjwt sqlalchemy pytest httpx numpy "qrcode[pil]"
       - name: Test
         run: pytest -q
