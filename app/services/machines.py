@@ -23,7 +23,8 @@ def list_machines(language: str = "EN") -> list[dict[str, Any]]:
                 "weight_factor": machine.weight_factor,
                 "exercises": list(machine.exercises),
                 "notes": localize(machine.notes, language),
-                "image_url": machine.image_url,
+                "image_url": machine.image_url
+                or f"https://placehold.co/640x420/be185d/ffffff?text={machine.id.replace('-', '+')}",
                 "name_i18n": name_i18n,
                 "notes_i18n": notes_i18n,
             }

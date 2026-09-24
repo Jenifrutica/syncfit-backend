@@ -34,3 +34,16 @@ def test_supplements_includes_daily_macros():
     assert body["daily_macros"]["protein_g"] > 80
     # Ordered by safety: first item should be SAFE.
     assert body["items"][0]["safety"] == "SAFE"
+
+
+def test_supplement_catalog_has_brands_and_frequency():
+    response = client.get("/api/v1/supplements/catalog", params={"language": "ES"})
+    assert response.status_code == 200
+    catalog = response.json()
+    assert len(catalog) >= 20
+    whey = next(s for s in catalog if s["id"] == "whey-protein")
+    assert whey["is_daily"] is True
+    assert whey["frequency"] == "DAILY"
+    assert whey["brand_examples"]
+    burner = next(s for s in catalog if s["id"] == "fat-burner")
+    assert any("Black Viper" in b for b in burner["brand_examples"])

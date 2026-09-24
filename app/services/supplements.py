@@ -8,6 +8,8 @@ from syncfit_contracts import (
     SupplementAdvice,
     SupplementAdviceItem,
     SupplementRequest,
+    load_supplements,
+    localize,
     supplements_for,
 )
 
@@ -109,4 +111,26 @@ def recommend(request: SupplementRequest) -> SupplementAdvice:
     )
 
 
-__all__ = ["recommend", "estimate_daily_macros"]
+__all__ = ["recommend", "estimate_daily_macros", "catalog"]
+
+
+def catalog(language: str = "EN") -> list[dict]:
+    """Raw supplement catalog with brands/frequency for reminders."""
+    result: list[dict] = []
+    for supplement in load_supplements():
+        result.append(
+            {
+                "id": supplement.id,
+                "name": localize(supplement.name, language),
+                "category": str(supplement.category),
+                "dosage": localize(supplement.dosage, language),
+                "frequency": str(supplement.frequency) if supplement.frequency else None,
+                "is_daily": supplement.is_daily,
+                "brand_examples": list(supplement.brand_examples),
+                "macros": supplement.macros.model_dump(),
+                "safety_general": str(supplement.safety_general),
+                "safety_pregnancy": str(supplement.safety_pregnancy),
+                "notes": localize(supplement.notes, language),
+            }
+        )
+    return result
