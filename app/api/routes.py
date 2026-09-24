@@ -203,12 +203,27 @@ def take_data(
     language: str = Query(default="EN"),
     scenario: str | None = Query(default=None),
     muscle_groups: str | None = Query(default=None),
+    exercises_count: int | None = Query(default=None),
+    time_budget_minutes: int | None = Query(default=None),
+    energy_level: str | None = Query(default=None),
+    include_warmup: bool = Query(default=True),
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     profile = profiles_db.get_profile(session, user)
     groups = [g.strip() for g in muscle_groups.split(",")] if muscle_groups else None
-    result = capture(session, user, profile, language=language, scenario=scenario, muscle_groups=groups)
+    result = capture(
+        session,
+        user,
+        profile,
+        language=language,
+        scenario=scenario,
+        muscle_groups=groups,
+        exercises_count=exercises_count,
+        time_budget_minutes=time_budget_minutes,
+        energy_level=energy_level,
+        include_warmup=include_warmup,
+    )
     session.commit()
     return result
 

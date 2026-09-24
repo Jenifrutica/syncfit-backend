@@ -61,6 +61,10 @@ def capture(
     language: str = "EN",
     scenario: str | None = None,
     muscle_groups: list[str] | None = None,
+    exercises_count: int | None = None,
+    time_budget_minutes: int | None = None,
+    energy_level: str | None = None,
+    include_warmup: bool = True,
 ) -> dict:
     """Run the simulated capture and persist session, telemetry and routine."""
     timeline = compute_timeline(profile) if profile is not None else None
@@ -80,7 +84,7 @@ def capture(
     )
     core = engine_result(frame)
     groups = muscle_groups or DEFAULT_GROUPS
-    energy = _latest_energy(session, user.id)
+    energy = energy_level or _latest_energy(session, user.id)
 
     request = RoutineRequest(
         muscle_groups=groups,
@@ -88,9 +92,11 @@ def capture(
         modality=modality,
         day_or_week=day_or_week,
         telemetry=frame,
-        exercises_count=5,
+        exercises_count=exercises_count or 5,
+        time_budget_minutes=time_budget_minutes,
         energy_level=energy,
         objective=profile.objective if profile is not None else None,
+        include_warmup=include_warmup,
     )
     payload = generate_routine(request, engine="simulator")
     ordered = order_entries(
