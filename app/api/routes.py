@@ -4,16 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
 from syncfit_contracts import EnergyCheckIn, RoutineRequest, SupplementRequest, UserProfile
+from syncfit_database import Routine, User
 
 from ..config import settings
+from ..db import get_session
 from ..services import profiles
+from ..services.auth import current_user
+from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
+from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
 from ..services.routines import generate_routine
 from ..services.supplements import recommend
+from ..services import profiles_db
 
 router = APIRouter()
 
@@ -109,6 +116,123 @@ def add_energy(payload: dict[str, Any]) -> dict[str, Any]:
 @router.get("/energy")
 def get_energy(profile_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
     return [c.model_dump(mode="json") for c in profiles.list_energy(profile_id)]
+
+
+# --- Authenticated athlete flow -------------------------------------------------
+
+
+@router.put("/profiles/me")
+def update_my_profile(
+    payload: dict[str, Any],
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    profile = profiles_db.upsert_profile(session, user, payload)
+    session.commit()
+    session.refresh(profile)
+    return _serialize_profile(profile)
+
+
+@router.get("/profiles/me")
+def get_my_profile(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    profile = profiles_db.get_profile(session, user)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile not set up")
+    return _serialize_profile(profile)
+
+
+@router.get("/cycle")
+def get_cycle(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    profile = profiles_db.get_profile(session, user)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile not set up")
+    return {"timeline": compute_timeline(profile)}
+
+
+@router.post("/capture")
+def take_data(
+    language: str = Query(default="EN"),
+    scenario: str | None = Query(default=None),
+    muscle_groups: str | None = Query(default=None),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    profile = profiles_db.get_profile(session, user)
+    groups = [g.strip() for g in muscle_groups.split(",")] if muscle_groups else None
+    result = capture(session, user, profile, language=language, scenario=scenario, muscle_groups=groups)
+    session.commit()
+    return result
+
+
+@router.get("/routine/latest")
+def latest_routine(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    routine = (
+        session.query(Routine)
+        .filter_by(user_id=user.id)
+        .order_by(Routine.created_at.desc())
+        .first()
+    )
+    if routine is None:
+        raise HTTPException(status_code=404, detail="no routine yet")
+    return {
+        "routine_id": routine.id,
+        "language": routine.language,
+        "muscle_groups": routine.muscle_groups,
+        "total_estimated_minutes": routine.total_estimated_minutes,
+        "phase_inferred": routine.phase_inferred,
+        "k_load": routine.k_load,
+        "items": [
+            {
+                "order_index": item.order_index,
+                "exercise_id": item.exercise_id,
+                "name": item.name,
+                "role": item.role,
+                "blocked": item.blocked,
+                "block_reason": item.block_reason,
+                "substitute": item.substitute,
+                "series": item.series,
+                "reps": item.reps,
+                "weight_suggested_kg": item.weight_suggested_kg,
+                "rest_seconds": item.rest_seconds,
+                "estimated_seconds": item.estimated_seconds,
+                "image_url": item.image_url,
+                "sets": item.sets,
+                "description": item.description,
+            }
+            for item in routine.items
+        ],
+    }
+
+
+def _serialize_profile(profile) -> dict[str, Any]:
+    return {
+        "profile_id": profile.id,
+        "user_id": profile.user_id,
+        "language": profile.language,
+        "height_cm": profile.height_cm,
+        "weight_kg": profile.weight_kg,
+        "age": profile.age,
+        "objective": profile.objective,
+        "modality": profile.modality,
+        "last_period_date": profile.last_period_date.isoformat() if profile.last_period_date else None,
+        "cycle_length_days": profile.cycle_length_days,
+        "gestation_week": profile.gestation_week,
+        "due_date": profile.due_date.isoformat() if profile.due_date else None,
+        "loads": [
+            {"exercise_id": load.exercise_id, "weight_kg": load.weight_kg, "reps": load.reps}
+            for load in profile.loads
+        ],
+        "timeline": compute_timeline(profile),
+    }
 
 
 __all__ = ["router"]

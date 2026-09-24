@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
+from .api.auth import router as auth_router
 from .api.routes import router as api_router
 from .ws.routes import router as ws_router
 
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(auth_router, prefix=settings.api_prefix)
     app.include_router(api_router, prefix=settings.api_prefix)
     app.include_router(ws_router, prefix=settings.api_prefix)
     return app

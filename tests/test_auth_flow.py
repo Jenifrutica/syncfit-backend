@@ -1,0 +1,96 @@
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+
+def _register(email: str) -> str:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "secret123", "display_name": "Ana"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["access_token"]
+
+
+def _auth(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_register_login_and_me():
+    token = _register("flow1@example.com")
+    me = client.get("/api/v1/auth/me", headers=_auth(token))
+    assert me.status_code == 200
+    assert me.json()["email"] == "flow1@example.com"
+
+    login = client.post(
+        "/api/v1/auth/login", json={"email": "flow1@example.com", "password": "secret123"}
+    )
+    assert login.status_code == 200
+    assert login.json()["access_token"]
+
+
+def test_duplicate_registration_rejected():
+    _register("flow2@example.com")
+    again = client.post(
+        "/api/v1/auth/register",
+        json={"email": "flow2@example.com", "password": "secret123", "display_name": "Ana"},
+    )
+    assert again.status_code == 409
+
+
+def test_onboarding_and_cycle_tracking():
+    token = _register("flow3@example.com")
+    onboarding = {
+        "language": "ES",
+        "modality": "MENSTRUAL_CYCLE",
+        "height_cm": 165,
+        "weight_kg": 62,
+        "objective": "HYPERTROPHY",
+        "last_period_date": "2026-09-10",
+        "cycle_length_days": 28,
+        "loads": [{"exercise_id": "goblet-squat", "weight_kg": 20, "reps": 10}],
+    }
+    updated = client.put("/api/v1/profiles/me", json=onboarding, headers=_auth(token))
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["loads"][0]["weight_kg"] == 20
+    assert body["timeline"]["modality"] == "MENSTRUAL_CYCLE"
+    assert body["timeline"]["cycle_day"] >= 1
+
+    cycle = client.get("/api/v1/cycle", headers=_auth(token)).json()
+    assert cycle["timeline"]["phase"] in {"MENSTRUAL", "FOLLICULAR", "OVULATORY", "LUTEAL"}
+
+
+def test_capture_flow_generates_and_stores_routine():
+    token = _register("flow4@example.com")
+    client.put(
+        "/api/v1/profiles/me",
+        json={
+            "language": "EN",
+            "modality": "MENSTRUAL_CYCLE",
+            "last_period_date": "2026-09-10",
+            "cycle_length_days": 28,
+            "loads": [{"exercise_id": "goblet-squat", "weight_kg": 20, "reps": 10}],
+        },
+        headers=_auth(token),
+    )
+
+    capture = client.post(
+        "/api/v1/capture", params={"scenario": "high_risk"}, headers=_auth(token)
+    )
+    assert capture.status_code == 200, capture.text
+    result = capture.json()
+    assert result["routine"]
+    order = [item["order_index"] for item in result["routine"]]
+    assert order == sorted(order)  # stored in order
+    assert result["phase_inferred"] == "OVULATORY"
+
+    latest = client.get("/api/v1/routine/latest", headers=_auth(token))
+    assert latest.status_code == 200
+    assert latest.json()["items"]
+
+
+def test_capture_requires_authentication():
+    assert client.post("/api/v1/capture").status_code == 401
