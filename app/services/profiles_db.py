@@ -51,6 +51,8 @@ def upsert_profile(session: Session, user: User, data: dict[str, Any]) -> Profil
         profile.due_date = _as_date(data["due_date"])
     if "available_machines" in data and data["available_machines"] is not None:
         profile.available_machines = list(data["available_machines"])
+    if "symptoms" in data and data["symptoms"] is not None:
+        profile.symptoms = list(data["symptoms"])
     if "current_supplements" in data and data["current_supplements"] is not None:
         profile.current_supplements = list(data["current_supplements"])
     if "supplement_macros" in data and data["supplement_macros"] is not None:

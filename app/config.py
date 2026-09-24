@@ -31,6 +31,7 @@ class Settings:
     version: str = "0.2.0"
     api_prefix: str = "/api/v1"
     cors_origins: tuple[str, ...] = ("http://localhost:3000",)
+    cors_origin_regex: str = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
     secret_key: str = "change-me-in-production"
     token_expire_minutes: int = 60 * 24 * 7
     database_url: str = DEFAULT_DATABASE_URL
@@ -46,6 +47,9 @@ class Settings:
             or os.environ.get("DATABASE_URL")
             or DEFAULT_DATABASE_URL,
             cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
+            cors_origin_regex=os.environ.get(
+                "BACKEND_CORS_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+            ),
         )
 
 
