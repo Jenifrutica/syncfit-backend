@@ -155,3 +155,55 @@ def test_supplement_intake_and_stats():
     assert stats["rest_days_allowance"] == 3
     assert stats["week_training_days"] >= 1
 
+
+def test_share_link_flow():
+    token = _register("flow7@example.com")
+    client.put(
+        "/api/v1/profiles/me",
+        json={
+            "modality": "MENSTRUAL_CYCLE",
+            "last_period_date": "2026-09-10",
+            "cycle_length_days": 28,
+            "current_supplements": ["creatine", "whey-protein"],
+            "weight_unit": "LB",
+            "available_machines": ["leg-press"],
+        },
+        headers=_auth(token),
+    )
+    client.post("/api/v1/capture", headers=_auth(token))
+
+    created = client.post(
+        "/api/v1/shares",
+        json={"role": "TRAINER", "label": "Coach", "permissions": ["PROFILE", "ROUTINE", "PROGRESS"]},
+        headers=_auth(token),
+    )
+    assert created.status_code == 200, created.text
+    share = created.json()
+    assert share["token"].startswith("sh_")
+
+    # Public endpoint, no auth.
+    shared = client.get(f"/api/v1/shared/{share['token']}")
+    assert shared.status_code == 200
+    body = shared.json()
+    assert body["role"] == "TRAINER"
+    assert body["owner_display_name"]
+    assert body["routine"] is not None
+    assert body["profile"]["progress"]["streak_days"] >= 1
+    # Not permitted sections stay null.
+    assert body["machines"] is None
+
+    listed = client.get("/api/v1/shares", headers=_auth(token)).json()
+    assert any(s["token"] == share["token"] for s in listed)
+
+    deleted = client.delete(f"/api/v1/shares/{share['token']}", headers=_auth(token))
+    assert deleted.status_code == 200
+    assert client.get(f"/api/v1/shared/{share['token']}").status_code == 404
+
+
+def test_share_requires_permissions():
+    token = _register("flow8@example.com")
+    response = client.post(
+        "/api/v1/shares", json={"role": "FRIEND", "permissions": []}, headers=_auth(token)
+    )
+    assert response.status_code == 422
+

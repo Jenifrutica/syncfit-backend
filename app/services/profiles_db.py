@@ -22,6 +22,8 @@ _SCALAR_FIELDS = (
     "gestation_week",
     "weekly_training_goal",
     "rest_days_allowance",
+    "weight_unit",
+    "photo_url",
 )
 
 
@@ -49,6 +51,8 @@ def upsert_profile(session: Session, user: User, data: dict[str, Any]) -> Profil
         profile.due_date = _as_date(data["due_date"])
     if "available_machines" in data and data["available_machines"] is not None:
         profile.available_machines = list(data["available_machines"])
+    if "current_supplements" in data and data["current_supplements"] is not None:
+        profile.current_supplements = list(data["current_supplements"])
 
     if "loads" in data and data["loads"] is not None:
         profile.loads.clear()
