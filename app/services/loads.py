@@ -32,15 +32,19 @@ def adjust_entries(
     loads: Iterable[ExerciseLoad],
     k_load: float | None,
     energy_level: object | None = None,
+    machine_factors: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     by_id = {load.exercise_id: float(load.weight_kg) for load in loads}
     multiplier = load_multiplier(k_load, energy_level)
+    factors = machine_factors or {}
     adjusted: list[dict[str, Any]] = []
     for entry in entries:
         item = dict(entry)
-        base = by_id.get(item.get("exercise_id", ""))
+        exercise_id = item.get("exercise_id", "")
+        base = by_id.get(exercise_id)
         if base is not None:
-            item["weight_suggested_kg"] = round(base * multiplier, 1)
+            factor = factors.get(exercise_id, 1.0)
+            item["weight_suggested_kg"] = round(base * multiplier * factor, 1)
         adjusted.append(item)
     return adjusted
 

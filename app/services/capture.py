@@ -26,6 +26,8 @@ from syncfit_simulator import generate_frame, get_scenario
 
 from .cycles import compute_timeline
 from .engine import engine_result
+from .loads import adjust_entries
+from .machines import factor_for_exercise
 from .ordering import order_entries
 from .routines import generate_routine
 
@@ -94,6 +96,18 @@ def capture(
     ordered = order_entries(
         payload["routine"], payload.get("phase_inferred") or core.phase_inferred.value, language
     )
+    warmup = payload.get("warmup", [])
+
+    # Apply the athlete's baseline loads, adjusted per available machine.
+    if profile is not None and profile.loads:
+        available = list(profile.available_machines or [])
+        factors = {
+            entry.get("exercise_id"): factor_for_exercise(entry.get("exercise_id", ""), available)
+            for entry in ordered + warmup
+            if entry.get("exercise_id")
+        }
+        ordered = adjust_entries(ordered, profile.loads, core.k_load, energy, factors)
+        warmup = adjust_entries(warmup, profile.loads, core.k_load, energy, factors)
 
     record = SessionRecord(
         user_id=user.id,
@@ -156,7 +170,7 @@ def capture(
         "k_load": core.k_load,
         "timeline": timeline,
         "total_estimated_minutes": payload.get("total_estimated_minutes"),
-        "warmup": payload.get("warmup", []),
+        "warmup": warmup,
         "routine": [
             {
                 "order_index": item.order_index,

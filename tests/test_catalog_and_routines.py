@@ -103,7 +103,7 @@ def test_profile_and_loads_flow():
         "loads": [{"exercise_id": "goblet-squat", "weight_kg": 20, "reps": 10}],
     }
     assert client.post("/api/v1/profiles", json=profile).status_code == 200
-    fetched = client.get("/api/v1/profiles/8a2d4e6f-1b3c-4d5e-9f70-a1b2c3d4e5f6").json()
+    fetched = client.get("/api/v1/profiles/by-id/8a2d4e6f-1b3c-4d5e-9f70-a1b2c3d4e5f6").json()
     assert fetched["loads"][0]["weight_kg"] == 20
 
     routine = client.post(

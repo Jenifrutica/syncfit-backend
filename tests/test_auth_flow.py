@@ -94,3 +94,35 @@ def test_capture_flow_generates_and_stores_routine():
 
 def test_capture_requires_authentication():
     assert client.post("/api/v1/capture").status_code == 401
+
+
+def test_calendar_and_machines_in_profile():
+    token = _register("flow5@example.com")
+    client.put(
+        "/api/v1/profiles/me",
+        json={
+            "modality": "MENSTRUAL_CYCLE",
+            "last_period_date": "2026-09-10",
+            "cycle_length_days": 28,
+            "body_fat_pct": 24.0,
+            "daily_calories": 2100,
+            "goal_phase": "VOLUME",
+            "available_machines": ["leg-press", "smith-machine"],
+        },
+        headers=_auth(token),
+    )
+    me = client.get("/api/v1/profiles/me", headers=_auth(token)).json()
+    assert me["goal_phase"] == "VOLUME"
+    assert me["body_fat_pct"] == 24.0
+    assert "leg-press" in me["available_machines"]
+
+    calendar = client.get(
+        "/api/v1/calendar", params={"month": "2026-09"}, headers=_auth(token)
+    )
+    assert calendar.status_code == 200
+    body = calendar.json()
+    assert body["month"] == "2026-09"
+    assert len(body["days"]) == 30
+    kinds = {day["kind"] for day in body["days"]}
+    assert kinds & {"CYCLE", "OVULATION", "STRENGTH"}
+
