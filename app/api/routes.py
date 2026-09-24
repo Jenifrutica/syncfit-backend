@@ -383,6 +383,7 @@ def _serialize_profile(profile) -> dict[str, Any]:
         "modality": profile.modality,
         "available_machines": list(profile.available_machines or []),
         "current_supplements": list(profile.current_supplements or []),
+        "supplement_macros": list(profile.supplement_macros or []),
         "weight_unit": profile.weight_unit or "KG",
         "photo_url": profile.photo_url,
         "last_period_date": profile.last_period_date.isoformat() if profile.last_period_date else None,
