@@ -156,6 +156,8 @@ def capture(
                 image_url=entry.get("image_url"),
                 sets=entry.get("sets", []),
                 description=entry.get("description") or {},
+                how_to=entry.get("how_to") or {},
+                tips=entry.get("tips") or [],
             )
         )
     session.add(routine)

@@ -53,6 +53,8 @@ def upsert_profile(session: Session, user: User, data: dict[str, Any]) -> Profil
         profile.available_machines = list(data["available_machines"])
     if "current_supplements" in data and data["current_supplements"] is not None:
         profile.current_supplements = list(data["current_supplements"])
+    if "supplement_macros" in data and data["supplement_macros"] is not None:
+        profile.supplement_macros = list(data["supplement_macros"])
 
     if "loads" in data and data["loads"] is not None:
         profile.loads.clear()
