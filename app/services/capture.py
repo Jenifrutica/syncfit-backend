@@ -29,6 +29,7 @@ from .engine import engine_result
 from .loads import adjust_entries
 from .machines import factor_for_exercise
 from .ordering import order_entries
+from .symptoms import apply_symptoms
 from .routines import generate_routine
 
 DEFAULT_GROUPS = ["LOWER_BODY", "UPPER_BODY", "CORE"]
@@ -104,6 +105,14 @@ def capture(
     )
     warmup = payload.get("warmup", [])
 
+    # Apply declared symptoms (block risky exercises / stop if contraindicated).
+    symptom_ids = list(profile.symptoms or []) if profile is not None else []
+    ordered, symptom_alerts, block_training = apply_symptoms(ordered, symptom_ids, language)
+    warmup, _, _ = apply_symptoms(warmup, symptom_ids, language)
+    if block_training:
+        ordered = []
+        warmup = []
+
     # Apply the athlete's baseline loads, adjusted per available machine.
     if profile is not None and profile.loads:
         available = list(profile.available_machines or [])
@@ -178,6 +187,7 @@ def capture(
         "k_load": core.k_load,
         "timeline": timeline,
         "total_estimated_minutes": payload.get("total_estimated_minutes"),
+        "alerts": symptom_alerts,
         "warmup": warmup,
         "routine": [
             {

@@ -399,6 +399,7 @@ def _serialize_profile(profile) -> dict[str, Any]:
         "goal_phase": profile.goal_phase,
         "modality": profile.modality,
         "available_machines": list(profile.available_machines or []),
+        "symptoms": list(profile.symptoms or []),
         "current_supplements": list(profile.current_supplements or []),
         "supplement_macros": list(profile.supplement_macros or []),
         "weight_unit": profile.weight_unit or "KG",
