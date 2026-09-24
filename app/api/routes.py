@@ -17,6 +17,7 @@ from ..services import profiles
 from ..services.auth import current_user
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
+from syncfit_contracts import load_symptoms, localize
 from ..services.calendar import build_calendar
 from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
@@ -107,6 +108,21 @@ def supplements(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return recommend(request).model_dump(mode="json")
+
+
+@router.get("/symptoms")
+def symptoms(language: str = Query(default="EN")) -> list[dict[str, Any]]:
+    result = []
+    for symptom in load_symptoms():
+        result.append({
+            "id": symptom["id"],
+            "name": localize(symptom["name"], language),
+            "modality": symptom.get("modality", "ANY"),
+            "advice": localize(symptom.get("advice", {}), language),
+            "impact_cap": symptom.get("impact_cap"),
+            "block_training": symptom.get("block_training", False),
+        })
+    return result
 
 
 @router.get("/machines")
