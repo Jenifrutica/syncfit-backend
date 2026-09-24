@@ -109,6 +109,11 @@ def capture(
     symptom_ids = list(profile.symptoms or []) if profile is not None else []
     ordered, symptom_alerts, block_training = apply_symptoms(ordered, symptom_ids, language)
     warmup, _, _ = apply_symptoms(warmup, symptom_ids, language)
+    if profile is not None and profile.symptom_notes:
+        symptom_alerts.append(f"Notas: {profile.symptom_notes}")
+    if profile is not None and profile.pain_levels:
+        for sid, level in profile.pain_levels.items():
+            symptom_alerts.append(f"Dolor {sid}: {level}/10")
     if block_training:
         ordered = []
         warmup = []

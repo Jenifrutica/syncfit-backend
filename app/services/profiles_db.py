@@ -24,6 +24,7 @@ _SCALAR_FIELDS = (
     "rest_days_allowance",
     "weight_unit",
     "photo_url",
+    "symptom_notes",
 )
 
 
@@ -53,6 +54,8 @@ def upsert_profile(session: Session, user: User, data: dict[str, Any]) -> Profil
         profile.available_machines = list(data["available_machines"])
     if "symptoms" in data and data["symptoms"] is not None:
         profile.symptoms = list(data["symptoms"])
+    if "pain_levels" in data and data["pain_levels"] is not None:
+        profile.pain_levels = dict(data["pain_levels"])
     if "current_supplements" in data and data["current_supplements"] is not None:
         profile.current_supplements = list(data["current_supplements"])
     if "supplement_macros" in data and data["supplement_macros"] is not None:
