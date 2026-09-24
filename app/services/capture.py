@@ -29,7 +29,7 @@ from .engine import engine_result
 from .ordering import order_entries
 from .routines import generate_routine
 
-DEFAULT_GROUPS = ["FULL_BODY"]
+DEFAULT_GROUPS = ["LOWER_BODY", "UPPER_BODY", "CORE"]
 
 
 def _scenario_for(modality: str, phase: str | None) -> str:
