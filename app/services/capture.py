@@ -190,6 +190,8 @@ def capture(
                 "image_url": item.image_url,
                 "sets": item.sets,
                 "description": item.description,
+                "how_to": item.how_to,
+                "tips": item.tips,
             }
             for item in routine.items
         ],
