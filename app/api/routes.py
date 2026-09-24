@@ -16,8 +16,10 @@ from ..services import profiles
 from ..services.auth import current_user
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
+from ..services.calendar import build_calendar
 from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
+from ..services.machines import list_machines
 from ..services.routines import generate_routine
 from ..services.supplements import recommend
 from ..services import profiles_db
@@ -71,15 +73,35 @@ def supplements(
     modality: str = Query(default="MENSTRUAL_CYCLE"),
     language: str = Query(default="EN"),
     objective: str | None = Query(default=None),
+    goal_phase: str | None = Query(default=None),
     week: int | None = Query(default=None),
+    weight_kg: float | None = Query(default=None),
+    height_cm: float | None = Query(default=None),
+    body_fat_pct: float | None = Query(default=None),
+    age: int | None = Query(default=None),
+    daily_calories: int | None = Query(default=None),
 ) -> dict[str, Any]:
     try:
         request = SupplementRequest(
-            modality=modality, language=language, objective=objective, week=week
+            modality=modality,
+            language=language,
+            objective=objective,
+            goal_phase=goal_phase,
+            week=week,
+            weight_kg=weight_kg,
+            height_cm=height_cm,
+            body_fat_pct=body_fat_pct,
+            age=age,
+            daily_calories=daily_calories,
         )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return recommend(request).model_dump(mode="json")
+
+
+@router.get("/machines")
+def machines(language: str = Query(default="EN")) -> list[dict[str, Any]]:
+    return list_machines(language)
 
 
 @router.post("/profiles")
@@ -96,7 +118,7 @@ def get_profiles() -> list[dict[str, Any]]:
     return [p.model_dump(mode="json") for p in profiles.list_profiles()]
 
 
-@router.get("/profiles/{profile_id}")
+@router.get("/profiles/by-id/{profile_id}")
 def get_profile(profile_id: str) -> dict[str, Any]:
     profile = profiles.get_profile(profile_id)
     if profile is None:
@@ -153,6 +175,17 @@ def get_cycle(
     if profile is None:
         raise HTTPException(status_code=404, detail="profile not set up")
     return {"timeline": compute_timeline(profile)}
+
+
+@router.get("/calendar")
+def get_calendar(
+    month: str | None = Query(default=None),
+    language: str = Query(default="EN"),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    profile = profiles_db.get_profile(session, user)
+    return build_calendar(profile, month=month, language=language).model_dump(mode="json")
 
 
 @router.post("/capture")
@@ -220,9 +253,13 @@ def _serialize_profile(profile) -> dict[str, Any]:
         "language": profile.language,
         "height_cm": profile.height_cm,
         "weight_kg": profile.weight_kg,
+        "body_fat_pct": profile.body_fat_pct,
+        "daily_calories": profile.daily_calories,
         "age": profile.age,
         "objective": profile.objective,
+        "goal_phase": profile.goal_phase,
         "modality": profile.modality,
+        "available_machines": list(profile.available_machines or []),
         "last_period_date": profile.last_period_date.isoformat() if profile.last_period_date else None,
         "cycle_length_days": profile.cycle_length_days,
         "gestation_week": profile.gestation_week,
