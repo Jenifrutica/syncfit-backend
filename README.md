@@ -91,3 +91,29 @@ Python 3.11+, FastAPI, WebSockets, Pydantic, imports `syncfit-core` and `syncfit
 - [`syncfit-frontend`](../syncfit-frontend) — client.
 
 All code, comments, documentation and commits in this repository are written in English.
+
+## Context for a new session
+
+**What it is.** FastAPI server: auth, onboarding, telemetry, routines, catalog,
+supplements, sharing. Reuses core/simulator/ai.
+
+**Stack.** Python 3.11+, FastAPI, SQLAlchemy (via syncfit-database), PyJWT,
+OpenAI SDK (optional reasoning).
+
+**Run.** `uvicorn app.main:app --reload --port 8000`. Config from `.env`
+(`SYNCFIT_DATABASE_URL`, `BACKEND_SECRET_KEY`, `BACKEND_CORS_ORIGINS`,
+`BACKEND_CORS_ORIGIN_REGEX`). CORS allows localhost any port (regex).
+
+**Endpoints (`/api/v1`).** `auth/register|login|me`; `profiles/me` (GET/PUT),
+`profiles`, `profiles/by-id/{id}`; `cycle`, `calendar`, `stats`; `capture`
+(query: muscle_groups, exercises_count, time_budget_minutes, energy_level,
+include_warmup); `routine/latest`; `catalog`, `muscle-groups`, `machines`,
+`symptoms`; `supplements` (+ `/supplements/catalog`), `supplement-intakes`
+(GET/POST); `telemetry` (POST) and WS `/ws/telemetry`; `shares` (GET/POST/DELETE),
+`shared/{token}` (public). Services in `app/services/` (auth, capture, cycles,
+calendar, routines, supplements, symptoms, sharing, stats, loads, machines).
+
+**Deps for capture.** profile symptoms are applied (block/advice/stop);
+available machines scale weights; body comp + goal feed macros.
+
+**Run tests.** `pytest` (needs contracts/core/simulator/database installed).
