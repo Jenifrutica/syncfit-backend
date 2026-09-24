@@ -35,6 +35,9 @@ class Settings:
     secret_key: str = "change-me-in-production"
     token_expire_minutes: int = 60 * 24 * 7
     database_url: str = DEFAULT_DATABASE_URL
+    superadmin_email: str | None = None
+    superadmin_password: str | None = None
+    superadmin_name: str = "Super Admin"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -47,6 +50,9 @@ class Settings:
             or os.environ.get("DATABASE_URL")
             or DEFAULT_DATABASE_URL,
             cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
+            superadmin_email=os.environ.get("SUPERADMIN_EMAIL"),
+            superadmin_password=os.environ.get("SUPERADMIN_PASSWORD"),
+            superadmin_name=os.environ.get("SUPERADMIN_NAME", "Super Admin"),
             cors_origin_regex=os.environ.get(
                 "BACKEND_CORS_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
             ),

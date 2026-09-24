@@ -8,3 +8,6 @@ if _db_path.exists():
     _db_path.unlink()
 os.environ["SYNCFIT_DATABASE_URL"] = f"sqlite:///{_db_path}"
 os.environ["BACKEND_SECRET_KEY"] = "test-secret-key-with-at-least-32-bytes!!"
+os.environ["SUPERADMIN_EMAIL"] = "root@syncfit.dev"
+os.environ["SUPERADMIN_PASSWORD"] = "rootsecret123"
+os.environ["SUPERADMIN_NAME"] = "Root"
