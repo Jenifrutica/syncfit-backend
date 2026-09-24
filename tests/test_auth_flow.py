@@ -126,3 +126,32 @@ def test_calendar_and_machines_in_profile():
     kinds = {day["kind"] for day in body["days"]}
     assert kinds & {"CYCLE", "OVULATION", "STRENGTH"}
 
+
+def test_supplement_intake_and_stats():
+    token = _register("flow6@example.com")
+    client.put(
+        "/api/v1/profiles/me",
+        json={"modality": "MENSTRUAL_CYCLE", "weekly_training_goal": 4, "rest_days_allowance": 3},
+        headers=_auth(token),
+    )
+
+    # Mark creatine as taken today.
+    today = "2026-09-24"
+    mark = client.post(
+        "/api/v1/supplement-intakes",
+        json={"supplement_id": "creatine", "date": today, "taken": True},
+        headers=_auth(token),
+    )
+    assert mark.status_code == 200
+    intakes = client.get(
+        "/api/v1/supplement-intakes", params={"date": today}, headers=_auth(token)
+    ).json()
+    assert any(i["supplement_id"] == "creatine" and i["taken"] for i in intakes)
+
+    # A capture creates a training session, which feeds the streak.
+    client.post("/api/v1/capture", headers=_auth(token))
+    stats = client.get("/api/v1/stats", headers=_auth(token)).json()
+    assert stats["weekly_goal"] == 4
+    assert stats["rest_days_allowance"] == 3
+    assert stats["week_training_days"] >= 1
+

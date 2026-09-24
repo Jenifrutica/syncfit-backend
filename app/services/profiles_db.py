@@ -20,6 +20,8 @@ _SCALAR_FIELDS = (
     "modality",
     "cycle_length_days",
     "gestation_week",
+    "weekly_training_goal",
+    "rest_days_allowance",
 )
 
 

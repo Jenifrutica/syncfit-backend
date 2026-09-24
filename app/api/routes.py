@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from syncfit_contracts import EnergyCheckIn, RoutineRequest, SupplementRequest, UserProfile
-from syncfit_database import Routine, User
+from syncfit_database import Routine, SupplementIntake, User
 
 from ..config import settings
 from ..db import get_session
@@ -21,6 +22,8 @@ from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
 from ..services.machines import list_machines
 from ..services.routines import generate_routine
+from ..services.stats import compute_stats
+from ..services.supplements import catalog as supplements_catalog
 from ..services.supplements import recommend
 from ..services import profiles_db
 
@@ -244,6 +247,65 @@ def latest_routine(
             for item in routine.items
         ],
     }
+
+
+@router.get("/supplements/catalog")
+def supplements_catalog_endpoint(language: str = Query(default="EN")) -> list[dict[str, Any]]:
+    return supplements_catalog(language)
+
+
+@router.get("/stats")
+def stats(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    profile = profiles_db.get_profile(session, user)
+    return compute_stats(session, user, profile)
+
+
+@router.post("/supplement-intakes")
+def set_supplement_intake(
+    payload: dict[str, Any],
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    supplement_id = str(payload.get("supplement_id", ""))
+    date_str = str(payload.get("date", date.today().isoformat()))
+    taken = bool(payload.get("taken", False))
+    if not supplement_id:
+        raise HTTPException(status_code=422, detail="supplement_id required")
+    row = (
+        session.query(SupplementIntake)
+        .filter_by(user_id=user.id, supplement_id=supplement_id, date=date.fromisoformat(date_str))
+        .one_or_none()
+    )
+    if row is None:
+        row = SupplementIntake(
+            user_id=user.id,
+            supplement_id=supplement_id,
+            date=date.fromisoformat(date_str),
+            taken=taken,
+        )
+        session.add(row)
+    else:
+        row.taken = taken
+    session.commit()
+    return {"supplement_id": supplement_id, "date": date_str, "taken": taken}
+
+
+@router.get("/supplement-intakes")
+def get_supplement_intakes(
+    date_str: str | None = Query(default=None, alias="date"),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    query = session.query(SupplementIntake).filter_by(user_id=user.id)
+    if date_str:
+        query = query.filter_by(date=date.fromisoformat(date_str))
+    return [
+        {"supplement_id": row.supplement_id, "date": row.date.isoformat(), "taken": row.taken}
+        for row in query.all()
+    ]
 
 
 def _serialize_profile(profile) -> dict[str, Any]:
