@@ -22,6 +22,13 @@ from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
 from ..services.machines import list_machines
 from ..services.routines import generate_routine
+from ..services.sharing import (
+    build_shared_profile,
+    create_share,
+    delete_share,
+    list_shares,
+    serialize_link,
+)
 from ..services.stats import compute_stats
 from ..services.supplements import catalog as supplements_catalog
 from ..services.supplements import recommend
@@ -308,6 +315,59 @@ def get_supplement_intakes(
     ]
 
 
+@router.post("/shares")
+def post_share(
+    payload: dict[str, Any],
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    from syncfit_contracts import SharePermission, ShareRole
+
+    try:
+        role = ShareRole(payload.get("role", "OTHER")).value
+        permissions = [SharePermission(p).value for p in payload.get("permissions", [])]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not permissions:
+        raise HTTPException(status_code=422, detail="select at least one permission")
+    link = create_share(session, user, role, permissions, payload.get("label"))
+    session.commit()
+    session.refresh(link)
+    return serialize_link(link)
+
+
+@router.get("/shares")
+def get_shares(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [serialize_link(link) for link in list_shares(session, user)]
+
+
+@router.delete("/shares/{token}")
+def remove_share(
+    token: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    if not delete_share(session, user, token):
+        raise HTTPException(status_code=404, detail="share not found")
+    session.commit()
+    return {"deleted": token}
+
+
+@router.get("/shared/{token}")
+def get_shared_profile(
+    token: str,
+    language: str = Query(default="EN"),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    shared = build_shared_profile(session, token, language)
+    if shared is None:
+        raise HTTPException(status_code=404, detail="share not found")
+    return shared.model_dump(mode="json")
+
+
 def _serialize_profile(profile) -> dict[str, Any]:
     return {
         "profile_id": profile.id,
@@ -322,6 +382,9 @@ def _serialize_profile(profile) -> dict[str, Any]:
         "goal_phase": profile.goal_phase,
         "modality": profile.modality,
         "available_machines": list(profile.available_machines or []),
+        "current_supplements": list(profile.current_supplements or []),
+        "weight_unit": profile.weight_unit or "KG",
+        "photo_url": profile.photo_url,
         "last_period_date": profile.last_period_date.isoformat() if profile.last_period_date else None,
         "cycle_length_days": profile.cycle_length_days,
         "gestation_week": profile.gestation_week,
