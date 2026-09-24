@@ -27,6 +27,19 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix=settings.api_prefix)
     app.include_router(api_router, prefix=settings.api_prefix)
     app.include_router(ws_router, prefix=settings.api_prefix)
+
+    @app.on_event("startup")
+    def _startup() -> None:
+        from .db import get_database
+        from .services.admin import ensure_superadmin
+
+        session = get_database().session()
+        try:
+            ensure_superadmin(session)
+            session.commit()
+        finally:
+            session.close()
+
     return app
 
 

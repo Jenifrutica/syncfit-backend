@@ -67,7 +67,21 @@ def current_user(
     return user
 
 
+def require_super_admin(user: User = Depends(current_user)) -> User:
+    if getattr(user, "role", None) != "SUPER_ADMIN":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin required")
+    return user
+
+
+def require_gym_admin(user: User = Depends(current_user)) -> User:
+    if getattr(user, "role", None) not in ("GYM_ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gym admin required")
+    return user
+
+
 __all__ = [
+    "require_super_admin",
+    "require_gym_admin",
     "hash_password",
     "verify_password",
     "create_access_token",

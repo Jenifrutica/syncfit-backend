@@ -30,7 +30,7 @@ class LoginIn(BaseModel):
 
 
 def _public_user(user: User) -> dict:
-    return {"id": user.id, "email": user.email, "display_name": user.display_name}
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
 
 
 @router.post("/register", status_code=201)

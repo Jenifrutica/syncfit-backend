@@ -14,7 +14,8 @@ from syncfit_database import Routine, SupplementIntake, User
 from ..config import settings
 from ..db import get_session
 from ..services import profiles
-from ..services.auth import current_user
+from ..services.auth import current_user, require_gym_admin, require_super_admin
+from ..services import admin as admin_service
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
 from syncfit_contracts import load_symptoms, localize
@@ -441,7 +442,7 @@ def _serialize_profile(profile) -> dict[str, Any]:
 
 
 @router.post("/gyms")
-def create_gym(payload: dict[str, Any], user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+def create_gym(payload: dict[str, Any], user: User = Depends(require_gym_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
     gym = gyms_service.create_gym(session, user, str(payload.get("name", "Gym")))
     session.commit(); session.refresh(gym)
     return gyms_service.serialize_gym(gym)
@@ -509,6 +510,38 @@ def gym_qr(gym_id: str, user: User = Depends(current_user), session: Session = D
     img = qrcode.make(gym.code)
     buffer = io.BytesIO(); img.save(buffer, format="PNG")
     return Response(content=buffer.getvalue(), media_type="image/png")
+
+
+# --- Super admin ---------------------------------------------------------------
+
+
+@router.post("/admin/gym-admins", status_code=201)
+def admin_create_gym_admin(payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    email = str(payload.get("email", "")).strip()
+    password = str(payload.get("password", ""))
+    name = str(payload.get("display_name", "Gym Admin"))
+    if "@" not in email or len(password) < 6:
+        raise HTTPException(status_code=422, detail="email and password (>=6) required")
+    if session.query(User).filter_by(email=email.lower()).one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="email already registered")
+    created = admin_service.create_gym_admin(session, email, password, name)
+    session.commit(); session.refresh(created)
+    return admin_service.serialize_user(created)
+
+
+@router.get("/admin/gym-admins")
+def admin_list_gym_admins(user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [admin_service.serialize_user(u) for u in admin_service.list_gym_admins(session)]
+
+
+@router.get("/admin/gyms")
+def admin_list_gyms(user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [gyms_service.serialize_gym(g) for g in session.query(__import__("syncfit_database").Gym).all()]
+
+
+@router.get("/admin/me")
+def admin_me(user: User = Depends(require_super_admin)) -> dict[str, Any]:
+    return admin_service.serialize_user(user)
 
 
 __all__ = ["router"]
