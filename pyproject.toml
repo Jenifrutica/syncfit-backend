@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "SyncFit Edge backend: FastAPI, WebSockets and telemetry orchestration (Python)."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Proprietary" }
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
