@@ -31,6 +31,9 @@ from ..services.sharing import (
     serialize_link,
 )
 from ..services.stats import compute_stats
+from ..services import gyms as gyms_service
+from fastapi import Response
+import io
 from ..services.supplements import catalog as supplements_catalog
 from ..services.supplements import recommend
 from ..services import profiles_db
@@ -430,6 +433,80 @@ def _serialize_profile(profile) -> dict[str, Any]:
         ],
         "timeline": compute_timeline(profile),
     }
+
+
+# --- Gyms / adminGimnasio ------------------------------------------------------
+
+
+@router.post("/gyms")
+def create_gym(payload: dict[str, Any], user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    gym = gyms_service.create_gym(session, user, str(payload.get("name", "Gym")))
+    session.commit(); session.refresh(gym)
+    return gyms_service.serialize_gym(gym)
+
+
+@router.get("/gyms/mine")
+def my_gyms(user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [gyms_service.serialize_gym(g) for g in gyms_service.list_owned(session, user)]
+
+
+@router.post("/gyms/{gym_id}/machines")
+def add_gym_machine(gym_id: str, payload: dict[str, Any], user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    gym = gyms_service.get_by_id(session, gym_id)
+    if gym is None or gym.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="gym not found")
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name required")
+    purpose = payload.get("purpose")
+    weight_factor = float(payload.get("weight_factor", 1.0) or 1.0)
+    # AI infers type/purpose/factor from the name/description when available.
+    try:
+        from syncfit_ai import analyze_machine
+        from ..services.auth import settings as _s
+        info = analyze_machine(name, payload.get("purpose"), "ES")
+        purpose = info.get("purpose") or purpose
+        weight_factor = float(info.get("weight_factor", weight_factor) or weight_factor)
+    except Exception:
+        pass
+    machine = gyms_service.add_machine(session, gym, name, purpose, payload.get("image_url"), weight_factor)
+    session.commit(); session.refresh(machine)
+    return gyms_service.serialize_machine(machine)
+
+
+@router.get("/gyms/{code}")
+def get_gym(code: str, session: Session = Depends(get_session)) -> dict[str, Any]:
+    gym = gyms_service.get_by_code(session, code)
+    if gym is None:
+        raise HTTPException(status_code=404, detail="gym not found")
+    return gyms_service.serialize_gym(gym)
+
+
+@router.post("/gyms/join")
+def join_gym(payload: dict[str, Any], user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    gym = gyms_service.get_by_code(session, str(payload.get("code", "")))
+    if gym is None:
+        raise HTTPException(status_code=404, detail="gym not found")
+    profile = profiles_db.get_profile(session, user)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile not set up")
+    gyms_service.join_gym(session, profile, gym)
+    session.commit()
+    return {"joined": gym.code, "machines": [m.id for m in gym.machines]}
+
+
+@router.get("/gyms/{gym_id}/qr.png")
+def gym_qr(gym_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
+    gym = gyms_service.get_by_id(session, gym_id)
+    if gym is None or gym.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="gym not found")
+    try:
+        import qrcode
+    except ImportError:
+        raise HTTPException(status_code=503, detail="qrcode not installed")
+    img = qrcode.make(gym.code)
+    buffer = io.BytesIO(); img.save(buffer, format="PNG")
+    return Response(content=buffer.getvalue(), media_type="image/png")
 
 
 __all__ = ["router"]
