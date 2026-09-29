@@ -149,6 +149,24 @@ Full endpoint reference: [`API.md`](./API.md).
 
 All code, comments, documentation and commits in this repository are written in English.
 
+## Handoff for the team
+
+**Role.** FastAPI runtime: orchestrates hardware → core → DeepSeek → validator,
+enforces the system rules, persists and serves the frontend.
+
+**Run / test.** `uvicorn app.main:app --port 8000` (no `--reload`; editable
+siblings are not hot-reloaded) · `pytest`.
+
+**Docs (read these first).** [`API.md`](./API.md) (integration guide),
+[`docs/FUNCTIONS.md`](./docs/FUNCTIONS.md) (module/function reference),
+[`docs/openapi.json`](./docs/openapi.json) (openapi snapshot).
+
+**Entry points.** `app/main.py`, `app/api/routes.py` + `app/api/auth.py`,
+`app/services/*` (capture pipeline, gyms, admin, supplements, sharing…),
+`app/ws/routes.py`. Roles: ATHLETE, GYM_ADMIN (gyms+equipment), SUPER_ADMIN
+(administrative user/profile CRUD). Config in `app/config.py`; engine via
+`BACKEND_ROUTINE_ENGINE`.
+
 ## Context for a new session
 
 **What it is.** FastAPI server: auth, onboarding, telemetry, routines, catalog,
