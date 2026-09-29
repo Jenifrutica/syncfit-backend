@@ -111,8 +111,16 @@ def test_profile_and_loads_flow():
         params={"profile_id": "8a2d4e6f-1b3c-4d5e-9f70-a1b2c3d4e5f6"},
         json={"muscle_groups": ["QUADRICEPS"], "language": "EN", "energy_level": "NO_ENERGY"},
     ).json()
-    goblet = next((e for e in routine["routine"] if e.get("exercise_id") == "goblet-squat"), None)
-    assert goblet is not None and goblet["weight_suggested_kg"] < 20  # adjusted down
+    first_id = routine["routine"][0]["exercise_id"]
+    profile["loads"] = [{"exercise_id": first_id, "weight_kg": 20, "reps": 10}]
+    assert client.post("/api/v1/profiles", json=profile).status_code == 200
+    routine = client.post(
+        "/api/v1/routines",
+        params={"profile_id": "8a2d4e6f-1b3c-4d5e-9f70-a1b2c3d4e5f6"},
+        json={"muscle_groups": ["QUADRICEPS"], "language": "EN", "energy_level": "NO_ENERGY"},
+    ).json()
+    entry = next((e for e in routine["routine"] if e.get("exercise_id") == first_id), None)
+    assert entry is not None and entry["weight_suggested_kg"] < 20  # adjusted down
 
 
 def test_energy_checkin_endpoint():

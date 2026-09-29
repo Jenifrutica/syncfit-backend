@@ -38,12 +38,14 @@ class Settings:
     superadmin_email: str | None = None
     superadmin_password: str | None = None
     superadmin_name: str = "Super Admin"
+    routine_engine: str = "ai"
 
     @classmethod
     def from_env(cls) -> "Settings":
         _load_dotenv()
         origins = os.environ.get("BACKEND_CORS_ORIGINS", "http://localhost:3000")
         return cls(
+            routine_engine=os.environ.get("BACKEND_ROUTINE_ENGINE", "ai"),
             secret_key=os.environ.get("BACKEND_SECRET_KEY", "change-me-in-production"),
             token_expire_minutes=int(os.environ.get("BACKEND_TOKEN_EXPIRE_MINUTES", 10080)),
             database_url=os.environ.get("SYNCFIT_DATABASE_URL")

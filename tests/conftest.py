@@ -11,3 +11,8 @@ os.environ["BACKEND_SECRET_KEY"] = "test-secret-key-with-at-least-32-bytes!!"
 os.environ["SUPERADMIN_EMAIL"] = "root@syncfit.dev"
 os.environ["SUPERADMIN_PASSWORD"] = "rootsecret123"
 os.environ["SUPERADMIN_NAME"] = "Root"
+
+# Force the offline AI path: an empty key makes OpenCodeGoClient raise, so tests
+# stay fast and deterministic (no network) whether or not syncfit-ai is installed.
+os.environ["REASONING_API_KEY"] = ""
+os.environ["OPENCODE_API_KEY"] = ""

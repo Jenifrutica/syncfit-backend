@@ -14,7 +14,7 @@ from syncfit_database import Routine, SupplementIntake, User
 from ..config import settings
 from ..db import get_session
 from ..services import profiles
-from ..services.auth import current_user, require_gym_admin, require_super_admin
+from ..services.auth import current_user, require_gym_admin, require_super_admin, verify_password
 from ..services import admin as admin_service
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
@@ -38,6 +38,7 @@ import io
 from ..services.supplements import catalog as supplements_catalog
 from ..services.supplements import recommend
 from ..services import profiles_db
+from ..services.validation import validate_document_id, validate_gym_name, validate_person_name
 
 router = APIRouter()
 
@@ -132,6 +133,54 @@ def symptoms(language: str = Query(default="EN")) -> list[dict[str, Any]]:
 @router.get("/machines")
 def machines(language: str = Query(default="EN")) -> list[dict[str, Any]]:
     return list_machines(language)
+
+
+@router.get("/exercises/{exercise_id}/alternatives")
+def exercise_alternatives(exercise_id: str, language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    profile = profiles_db.get_profile(session, user)
+    equipment = (
+        gyms_service.available_equipment_keys(session, profile) if profile is not None else None
+    )
+    try:
+        from syncfit_ai import alternatives_for
+
+        return alternatives_for(exercise_id, equipment, language)
+    except Exception:
+        from syncfit_contracts import variants_of
+
+        return [
+            {
+                "id": e.id,
+                "name": localize(e.name, language),
+                "movement_pattern": str(getattr(e, "movement_pattern", "") or ""),
+                "equipment_type": str(e.equipment_type) if e.equipment_type else None,
+                "required_equipment": list(getattr(e, "required_equipment", []) or []),
+                "available": True,
+                "variant_of": getattr(e, "variant_of", None),
+                "image_url": e.image_url,
+            }
+            for e in variants_of(exercise_id)
+            if e.id != exercise_id
+        ]
+
+
+@router.get("/exercises/{exercise_id}/variants")
+def exercise_variants(exercise_id: str, language: str = Query(default="EN")) -> list[dict[str, Any]]:
+    from syncfit_contracts import variants_of
+
+    return [
+        {
+            "id": exercise.id,
+            "name": localize(exercise.name, language),
+            "equipment_type": str(exercise.equipment_type) if exercise.equipment_type else None,
+            "equipment": exercise.equipment,
+            "impact": str(exercise.impact),
+            "image_url": exercise.image_url,
+            "media_url": exercise.media_url,
+            "variant_of": getattr(exercise, "variant_of", None),
+        }
+        for exercise in variants_of(exercise_id)
+    ]
 
 
 @router.post("/profiles")
@@ -287,6 +336,10 @@ def latest_routine(
                 "description": item.description,
                 "how_to": item.how_to,
                 "tips": item.tips,
+                "machine_id": item.machine_id,
+                "machine_name": item.machine_name,
+                "movement_pattern": item.movement_pattern,
+                "rationale": item.rationale,
             }
             for item in routine.items
         ],
@@ -409,6 +462,7 @@ def _serialize_profile(profile) -> dict[str, Any]:
     return {
         "profile_id": profile.id,
         "user_id": profile.user_id,
+        "document_id": profile.user.document_id if getattr(profile, "user", None) else None,
         "language": profile.language,
         "height_cm": profile.height_cm,
         "weight_kg": profile.weight_kg,
@@ -426,6 +480,7 @@ def _serialize_profile(profile) -> dict[str, Any]:
         "supplement_macros": list(profile.supplement_macros or []),
         "weight_unit": profile.weight_unit or "KG",
         "photo_url": profile.photo_url,
+        "active_gym_id": profile.active_gym_id,
         "last_period_date": profile.last_period_date.isoformat() if profile.last_period_date else None,
         "cycle_length_days": profile.cycle_length_days,
         "gestation_week": profile.gestation_week,
@@ -442,60 +497,189 @@ def _serialize_profile(profile) -> dict[str, Any]:
 
 
 @router.post("/gyms")
-def create_gym(payload: dict[str, Any], user: User = Depends(require_gym_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
-    gym = gyms_service.create_gym(session, user, str(payload.get("name", "Gym")))
+def create_gym(payload: dict[str, Any], language: str = Query(default="EN"), user: User = Depends(require_gym_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    try:
+        name = validate_gym_name(payload.get("name", ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    gym = gyms_service.create_gym(session, user, name)
     session.commit(); session.refresh(gym)
-    return gyms_service.serialize_gym(gym)
+    return gyms_service.serialize_gym(gym, language)
+
+
+@router.patch("/gyms/{gym_id}")
+def update_gym(gym_id: str, payload: dict[str, Any], language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    gym = gyms_service.get_by_id(session, gym_id)
+    if gym is None or gym.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="gym not found")
+    if "name" in payload:
+        try:
+            name = validate_gym_name(payload.get("name", ""))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        gyms_service.rename_gym(session, gym, name)
+    session.commit(); session.refresh(gym)
+    return gyms_service.serialize_gym(gym, language)
+
+
+@router.delete("/gyms/{gym_id}", status_code=204)
+def delete_gym(gym_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
+    gym = gyms_service.get_by_id(session, gym_id)
+    if gym is None or gym.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="gym not found")
+    gyms_service.delete_gym(session, gym)
+    session.commit()
+    return Response(status_code=204)
+
+
+def _machine_ai(name: str, purpose: Any, language: str) -> dict[str, Any]:
+    """Best-effort AI inference (type, localized name/purpose, exercises, factor)."""
+    try:
+        from syncfit_ai import analyze_machine
+
+        return analyze_machine(name, purpose, language) or {}
+    except Exception:
+        return {}
 
 
 @router.get("/gyms/mine")
-def my_gyms(user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
-    return [gyms_service.serialize_gym(g) for g in gyms_service.list_owned(session, user)]
+def my_gyms(language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [gyms_service.serialize_gym(g, language) for g in gyms_service.list_owned(session, user)]
+
+
+@router.get("/gyms/joined")
+def joined_gyms(language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    profile = profiles_db.get_profile(session, user)
+    if profile is None:
+        return []
+    return gyms_service.joined_gyms(session, profile, language)
 
 
 @router.post("/gyms/{gym_id}/machines")
-def add_gym_machine(gym_id: str, payload: dict[str, Any], user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+def add_gym_machine(gym_id: str, payload: dict[str, Any], language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
     gym = gyms_service.get_by_id(session, gym_id)
     if gym is None or gym.owner_user_id != user.id:
         raise HTTPException(status_code=404, detail="gym not found")
     name = str(payload.get("name", "")).strip()
     if not name:
         raise HTTPException(status_code=422, detail="name required")
-    purpose = payload.get("purpose")
-    weight_factor = float(payload.get("weight_factor", 1.0) or 1.0)
-    # AI infers type/purpose/factor from the name/description when available.
-    try:
-        from syncfit_ai import analyze_machine
-        from ..services.auth import settings as _s
-        info = analyze_machine(name, payload.get("purpose"), "ES")
-        purpose = info.get("purpose") or purpose
-        weight_factor = float(info.get("weight_factor", weight_factor) or weight_factor)
-    except Exception:
-        pass
-    machine = gyms_service.add_machine(session, gym, name, purpose, payload.get("image_url"), weight_factor)
+    purpose_in = payload.get("purpose")
+    info = _machine_ai(name, purpose_in, language)
+    name_i18n = gyms_service.build_i18n(name, info.get("name"))
+    purpose_i18n = (
+        gyms_service.build_i18n(str(purpose_in or info.get("purpose", "")), info.get("purpose"))
+        if (purpose_in or info.get("purpose"))
+        else None
+    )
+    exercise_ids = gyms_service.sanitize_exercise_ids(
+        list(payload.get("exercise_ids") or info.get("exercise_ids") or [])
+    )
+    weight_factor = float(payload.get("weight_factor") or info.get("weight_factor") or 1.0)
+    equipment_key = payload.get("equipment_key") or ("machine" if exercise_ids else None)
+    equipment_type = payload.get("equipment_type") or (info.get("inferred_type") if info else None)
+    machine = gyms_service.add_machine(
+        session, gym, name_i18n, purpose_i18n, payload.get("image_url"), weight_factor,
+        exercise_ids, equipment_key, equipment_type,
+    )
     session.commit(); session.refresh(machine)
-    return gyms_service.serialize_machine(machine)
+    return gyms_service.serialize_machine(machine, language)
+
+
+@router.patch("/gyms/{gym_id}/machines/{machine_id}")
+def update_gym_machine(gym_id: str, machine_id: str, payload: dict[str, Any], language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    gym = gyms_service.get_by_id(session, gym_id)
+    if gym is None or gym.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="gym not found")
+    machine = gyms_service.get_machine(session, gym, machine_id)
+    if machine is None:
+        raise HTTPException(status_code=404, detail="machine not found")
+    fields: dict[str, Any] = {}
+    if "name" in payload or "purpose" in payload:
+        name = str(payload.get("name", gyms_service.localize(machine.name, "EN"))).strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="name required")
+        purpose_in = payload.get("purpose")
+        info = _machine_ai(name, purpose_in, language)
+        if "name" in payload:
+            fields["name"] = gyms_service.build_i18n(name, info.get("name"))
+        if "purpose" in payload:
+            fields["purpose"] = (
+                gyms_service.build_i18n(str(purpose_in or ""), info.get("purpose"))
+                if purpose_in
+                else None
+            )
+    if "exercise_ids" in payload:
+        fields["exercise_ids"] = gyms_service.sanitize_exercise_ids(list(payload.get("exercise_ids") or []))
+    if "equipment_key" in payload:
+        fields["equipment_key"] = payload.get("equipment_key")
+    if "equipment_type" in payload:
+        fields["equipment_type"] = payload.get("equipment_type")
+    if "image_url" in payload:
+        fields["image_url"] = payload.get("image_url")
+    if "weight_factor" in payload:
+        fields["weight_factor"] = float(payload.get("weight_factor") or 1.0)
+    gyms_service.update_machine(session, machine, **fields)
+    session.commit(); session.refresh(machine)
+    return gyms_service.serialize_machine(machine, language)
+
+
+@router.delete("/gyms/{gym_id}/machines/{machine_id}", status_code=204)
+def delete_gym_machine(gym_id: str, machine_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
+    gym = gyms_service.get_by_id(session, gym_id)
+    if gym is None or gym.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="gym not found")
+    machine = gyms_service.get_machine(session, gym, machine_id)
+    if machine is None:
+        raise HTTPException(status_code=404, detail="machine not found")
+    gyms_service.delete_machine(session, machine)
+    session.commit()
+    return Response(status_code=204)
 
 
 @router.get("/gyms/{code}")
-def get_gym(code: str, session: Session = Depends(get_session)) -> dict[str, Any]:
+def get_gym(code: str, language: str = Query(default="EN"), session: Session = Depends(get_session)) -> dict[str, Any]:
     gym = gyms_service.get_by_code(session, code)
     if gym is None:
         raise HTTPException(status_code=404, detail="gym not found")
-    return gyms_service.serialize_gym(gym)
+    return gyms_service.serialize_gym(gym, language)
 
 
 @router.post("/gyms/join")
-def join_gym(payload: dict[str, Any], user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+def join_gym(payload: dict[str, Any], language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
     gym = gyms_service.get_by_code(session, str(payload.get("code", "")))
     if gym is None:
         raise HTTPException(status_code=404, detail="gym not found")
     profile = profiles_db.get_profile(session, user)
     if profile is None:
         raise HTTPException(status_code=404, detail="profile not set up")
-    gyms_service.join_gym(session, profile, gym)
+    membership = gyms_service.join_gym(session, profile, gym)
+    session.commit(); session.refresh(gym)
+    return gyms_service.serialize_joined_gym(
+        gym, profile.active_gym_id == gym.id, membership.created_at, language=language
+    )
+
+
+@router.delete("/gyms/{gym_id}/leave", status_code=204)
+def leave_gym(gym_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
+    profile = profiles_db.get_profile(session, user)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile not set up")
+    if not gyms_service.leave_gym(session, profile, gym_id):
+        raise HTTPException(status_code=404, detail="gym not joined")
     session.commit()
-    return {"joined": gym.code, "machines": [m.id for m in gym.machines]}
+    return Response(status_code=204)
+
+
+@router.post("/gyms/{gym_id}/activate")
+def activate_gym(gym_id: str, language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    profile = profiles_db.get_profile(session, user)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile not set up")
+    if not gyms_service.set_active_gym(session, profile, gym_id):
+        raise HTTPException(status_code=404, detail="gym not joined")
+    session.commit()
+    gym = gyms_service.get_by_id(session, gym_id)
+    return gyms_service.serialize_joined_gym(gym, True, language=language)
 
 
 @router.get("/gyms/{gym_id}/qr.png")
@@ -519,12 +703,19 @@ def gym_qr(gym_id: str, user: User = Depends(current_user), session: Session = D
 def admin_create_gym_admin(payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
     email = str(payload.get("email", "")).strip()
     password = str(payload.get("password", ""))
-    name = str(payload.get("display_name", "Gym Admin"))
+    try:
+        name = validate_person_name(payload.get("display_name", "Gym Admin"))
+        document_id = payload.get("document_id")
+        document_id = validate_document_id(document_id) if document_id else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if "@" not in email or len(password) < 6:
         raise HTTPException(status_code=422, detail="email and password (>=6) required")
     if session.query(User).filter_by(email=email.lower()).one_or_none() is not None:
         raise HTTPException(status_code=409, detail="email already registered")
-    created = admin_service.create_gym_admin(session, email, password, name)
+    if document_id and session.query(User).filter_by(document_id=document_id).one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="document_id already registered")
+    created = admin_service.create_gym_admin(session, email, password, name, document_id)
     session.commit(); session.refresh(created)
     return admin_service.serialize_user(created)
 
@@ -535,13 +726,128 @@ def admin_list_gym_admins(user: User = Depends(require_super_admin), session: Se
 
 
 @router.get("/admin/gyms")
-def admin_list_gyms(user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
-    return [gyms_service.serialize_gym(g) for g in session.query(__import__("syncfit_database").Gym).all()]
+def admin_list_gyms(language: str = Query(default="EN"), user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [gyms_service.serialize_gym(g, language) for g in session.query(__import__("syncfit_database").Gym).all()]
 
 
 @router.get("/admin/me")
 def admin_me(user: User = Depends(require_super_admin)) -> dict[str, Any]:
     return admin_service.serialize_user(user)
+
+
+# --- Super admin: user/profile administration ----------------------------------
+
+_ROLES = ("ATHLETE", "GYM_ADMIN", "SUPER_ADMIN")
+
+
+def _require_admin_password(user: User, payload: dict[str, Any]) -> None:
+    password = str(payload.get("admin_password", ""))
+    if not password or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=403, detail="super admin password required")
+
+
+def _target_user(session: Session, user_id: str) -> User:
+    target = admin_service.get_user(session, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return target
+
+
+@router.get("/admin/users")
+def admin_list_users(role: str | None = Query(default=None), search: str | None = Query(default=None), user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [admin_service.serialize_user(u) for u in admin_service.list_users(session, role, search)]
+
+
+@router.get("/admin/users/{user_id}")
+def admin_get_user(user_id: str, user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    target = _target_user(session, user_id)
+    profile = profiles_db.get_profile(session, target)
+    return {
+        "user": admin_service.serialize_user(target),
+        "profile": _serialize_profile(profile) if profile is not None else None,
+    }
+
+
+@router.patch("/admin/users/{user_id}")
+def admin_update_user(user_id: str, payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    target = _target_user(session, user_id)
+    data: dict[str, Any] = {}
+    if "display_name" in payload:
+        try:
+            data["display_name"] = validate_person_name(payload.get("display_name", ""))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if "email" in payload:
+        email = str(payload.get("email", "")).strip().lower()
+        if "@" not in email:
+            raise HTTPException(status_code=422, detail="invalid email")
+        if session.query(User).filter(User.email == email, User.id != target.id).one_or_none() is not None:
+            raise HTTPException(status_code=409, detail="email already registered")
+        data["email"] = email
+    if "document_id" in payload:
+        document = payload.get("document_id")
+        try:
+            document = validate_document_id(document) if document else None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if document and session.query(User).filter(User.document_id == document, User.id != target.id).one_or_none() is not None:
+            raise HTTPException(status_code=409, detail="document_id already registered")
+        data["document_id"] = document
+    admin_service.update_user(session, target, data)
+    session.commit(); session.refresh(target)
+    return admin_service.serialize_user(target)
+
+
+@router.post("/admin/users/{user_id}/deactivate")
+def admin_deactivate_user(user_id: str, user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    target = _target_user(session, user_id)
+    if target.id == user.id:
+        raise HTTPException(status_code=400, detail="cannot deactivate yourself")
+    admin_service.set_active(session, target, False)
+    session.commit(); session.refresh(target)
+    return admin_service.serialize_user(target)
+
+
+@router.post("/admin/users/{user_id}/activate")
+def admin_activate_user(user_id: str, user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    target = _target_user(session, user_id)
+    admin_service.set_active(session, target, True)
+    session.commit(); session.refresh(target)
+    return admin_service.serialize_user(target)
+
+
+@router.post("/admin/users/{user_id}/password")
+def admin_reset_password(user_id: str, payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    target = _target_user(session, user_id)
+    password = str(payload.get("password", ""))
+    if len(password) < 6:
+        raise HTTPException(status_code=422, detail="password must be at least 6 characters")
+    admin_service.reset_password(session, target, password)
+    session.commit()
+    return {"reset": target.id}
+
+
+@router.post("/admin/users/{user_id}/role")
+def admin_set_role(user_id: str, payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    target = _target_user(session, user_id)
+    _require_admin_password(user, payload)
+    role = str(payload.get("role", "")).upper()
+    if role not in _ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of {_ROLES}")
+    admin_service.set_role(session, target, role)
+    session.commit(); session.refresh(target)
+    return admin_service.serialize_user(target)
+
+
+@router.delete("/admin/users/{user_id}")
+def admin_delete_user(user_id: str, payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> Response:
+    target = _target_user(session, user_id)
+    _require_admin_password(user, payload)
+    if target.id == user.id:
+        raise HTTPException(status_code=400, detail="cannot delete yourself")
+    admin_service.delete_user(session, target)
+    session.commit()
+    return Response(status_code=204)
 
 
 __all__ = ["router"]

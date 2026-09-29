@@ -67,6 +67,24 @@ def _gentle_entries(language: str) -> list[dict]:
     return gentle
 
 
+def contraindicated_patterns(symptom_ids: list[str]) -> list[str]:
+    """Movement patterns to avoid given the declared symptoms.
+
+    Uses the `avoid_patterns` list in the shared symptom catalog (e.g. knee pain
+    blocks lunge/squat; low-back pain blocks hinge/row).
+    """
+    from syncfit_contracts import get_symptom
+
+    blocked: set[str] = set()
+    for symptom_id in symptom_ids:
+        symptom = get_symptom(symptom_id)
+        if symptom is None:
+            continue
+        for pattern in symptom.get("avoid_patterns", []) or []:
+            blocked.add(str(pattern))
+    return sorted(blocked)
+
+
 def apply_symptoms(
     entries: list[dict[str, Any]],
     symptom_ids: list[str],
@@ -100,4 +118,4 @@ def apply_symptoms(
     return entries, alerts, False
 
 
-__all__ = ["apply_symptoms"]
+__all__ = ["apply_symptoms", "contraindicated_patterns"]

@@ -1,3 +1,5 @@
+import zlib
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -6,9 +8,10 @@ client = TestClient(app)
 
 
 def _register(email: str) -> str:
+    document_id = f"{zlib.crc32(email.encode()) % 10**10:010d}"
     response = client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "secret123", "display_name": "Ana"},
+        json={"email": email, "password": "secret123", "display_name": "Ana", "document_id": document_id},
     )
     assert response.status_code == 201, response.text
     return response.json()["access_token"]
@@ -35,7 +38,7 @@ def test_duplicate_registration_rejected():
     _register("flow2@example.com")
     again = client.post(
         "/api/v1/auth/register",
-        json={"email": "flow2@example.com", "password": "secret123", "display_name": "Ana"},
+        json={"email": "flow2@example.com", "password": "secret123", "display_name": "Ana", "document_id": "2000000001"},
     )
     assert again.status_code == 409
 

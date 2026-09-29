@@ -64,6 +64,8 @@ def current_user(
     user = session.get(User, payload.get("sub"))
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if getattr(user, "active", True) is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
     return user
 
 
@@ -74,7 +76,9 @@ def require_super_admin(user: User = Depends(current_user)) -> User:
 
 
 def require_gym_admin(user: User = Depends(current_user)) -> User:
-    if getattr(user, "role", None) not in ("GYM_ADMIN", "SUPER_ADMIN"):
+    # Gym creation/management belongs to gym admins only; the super admin is a
+    # purely administrative role and cannot create gyms or machines.
+    if getattr(user, "role", None) != "GYM_ADMIN":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gym admin required")
     return user
 
