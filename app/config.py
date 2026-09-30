@@ -41,6 +41,7 @@ class Settings:
     superadmin_password: str | None = None
     superadmin_name: str = "Super Admin"
     routine_engine: str = "ai"
+    rate_limit_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -54,10 +55,13 @@ class Settings:
                 "BACKEND_SECRET_KEY must be a random string of at least 32 characters"
             )
 
+        rate_limit_enabled = (
+            os.environ.get("BACKEND_RATE_LIMIT_ENABLED", "true").lower() == "true"
+        )
 
-        
         return cls(
             routine_engine=os.environ.get("BACKEND_ROUTINE_ENGINE", "ai"),
+            rate_limit_enabled=rate_limit_enabled,
             secret_key=secret_key,
             token_expire_minutes=int(os.environ.get("BACKEND_TOKEN_EXPIRE_MINUTES", 10080)),
             database_url=os.environ.get("SYNCFIT_DATABASE_URL")

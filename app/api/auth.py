@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 from syncfit_database import User
 
 from ..db import get_session
+from ..rate_limit import limiter
 from ..services.auth import (
     create_access_token,
     current_user,
@@ -48,7 +49,8 @@ def _public_user(user: User) -> dict:
 
 
 @router.post("/register", status_code=201)
-def register(payload: RegisterIn, session: Session = Depends(get_session)) -> dict:
+@limiter.limit("10/hour")
+def register(request: Request, payload: RegisterIn, session: Session = Depends(get_session)) -> dict:
     email = payload.email.lower()
     try:
         display_name = validate_person_name(payload.display_name)
@@ -77,7 +79,8 @@ def register(payload: RegisterIn, session: Session = Depends(get_session)) -> di
 
 
 @router.post("/login")
-def login(payload: LoginIn, session: Session = Depends(get_session)) -> dict:
+@limiter.limit("5/minute")
+def login(request: Request, payload: LoginIn, session: Session = Depends(get_session)) -> dict:
     user = session.query(User).filter_by(email=payload.email.strip().lower()).one_or_none()
     if user is None:
         spend_password_check(payload.password)
