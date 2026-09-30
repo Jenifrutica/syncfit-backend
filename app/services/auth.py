@@ -16,28 +16,40 @@ from syncfit_database import User
 from ..config import settings
 from ..db import get_session
 
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, InvalidHashError
+
 ALGORITHM = "HS256"
 _ITERATIONS = 200_000
+
+_ph = PasswordHasher()
+DUMMY_HASH = _ph.hash("dummy-password")
 _bearer = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _ITERATIONS)
-    return f"pbkdf2_sha256${_ITERATIONS}${salt.hex()}${digest.hex()}"
+    return _ph.hash(password)
 
 
-def verify_password(password: str, stored: str) -> bool:
+def _verify_pbkdf2(password: str, stored: str) -> bool:
     try:
-        algorithm, iterations, salt_hex, digest_hex = stored.split("$")
+        iterations, salt_hex, digest_hex = stored.split("$")
     except ValueError:
         return False
-    if algorithm != "pbkdf2_sha256":
-        return False
+
     digest = hashlib.pbkdf2_hmac(
         "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations)
     )
     return hmac.compare_digest(digest.hex(), digest_hex)
+
+
+def verify_password(password:str, stored:str) -> bool:
+    if stored.startswith("pbkdf2_sha256"):
+        return _verify_pbkdf2(password=password, stored=stored)
+    try:
+        return _ph.verify(password, stored)
+    except (VerifyMismatchError, InvalidHashError):
+        return False
 
 
 def create_access_token(user_id: str) -> str:
