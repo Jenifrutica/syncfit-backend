@@ -6,6 +6,7 @@ from syncfit_database import User
 
 from app.db import get_database
 from app.main import app
+from app.rate_limit import limiter
 
 client = TestClient(app)
 
@@ -250,3 +251,17 @@ def test_legacy_pbkdf2_hash_is_upgraded_on_login():
     with get_database().session_scope() as s:
         user = s.query(User).filter_by(email="legacy@example.com").one()
         assert user.password_hash.startswith("$argon2id$")
+
+
+def test_login_is_rate_limited():
+    limiter.enabled = True
+    try:
+        codes = [
+            client.post("/api/v1/auth/login", json={"email": "nobody@example.com", "password": "wrong-pass"}).status_code
+            #sent post request six times to test the rate limit
+            for _ in range(6)
+        ]
+    finally:
+        limiter.enabled = False
+        limiter.reset()
+    assert codes == [401, 401, 401, 401, 401, 429]

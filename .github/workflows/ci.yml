@@ -55,6 +55,6 @@ jobs:
           pip install ./deps/syncfit-contracts/python ./deps/syncfit-core ./deps/syncfit-database
           pip install --no-deps -e ./deps/syncfit-simulator/py
           pip install --no-deps -e .
-          pip install fastapi "uvicorn[standard]" "pydantic[email]" pyjwt argon2-cffi sqlalchemy pytest httpx numpy "qrcode[pil]"
+          pip install fastapi "uvicorn[standard]" "pydantic[email]" pyjwt argon2-cffi slowapi sqlalchemy pytest httpx numpy "qrcode[pil]"
       - name: Test
         run: pytest -q
