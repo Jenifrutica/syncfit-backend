@@ -1,12 +1,16 @@
 import hashlib
 import zlib
+from datetime import datetime, timedelta, timezone
 
+import jwt
 from fastapi.testclient import TestClient
 from syncfit_database import User
 
+from app.config import settings
 from app.db import get_database
 from app.main import app
 from app.rate_limit import limiter
+from app.services.admin import ensure_superadmin
 
 client = TestClient(app)
 
@@ -265,3 +269,41 @@ def test_login_is_rate_limited():
         limiter.enabled = False
         limiter.reset()
     assert codes == [401, 401, 401, 401, 401, 429]
+
+
+def test_password_reset_revokes_existing_tokens():
+    token = _register("revoke@example.com")
+    user_id = client.get("/api/v1/auth/me", headers=_auth(token)).json()["id"]
+    with get_database().session_scope() as s:
+        ensure_superadmin(s)
+    root = client.post(
+        "/api/v1/auth/login", json={"email": "root@syncfit.dev", "password": "rootsecret123"}
+    ).json()["access_token"]
+
+    reset = client.post(
+        f"/api/v1/admin/users/{user_id}/password", json={"password": "newsecret123"}, headers=_auth(root)
+    )
+    assert reset.status_code == 200
+
+    stale = client.get("/api/v1/auth/me", headers=_auth(token))
+    assert stale.status_code == 401
+    assert stale.json()["detail"] == "Token revoked"
+
+    login = client.post(
+        "/api/v1/auth/login", json={"email": "revoke@example.com", "password": "newsecret123"}
+    )
+    assert client.get("/api/v1/auth/me", headers=_auth(login.json()["access_token"])).status_code == 200
+
+
+def test_token_without_required_claims_is_rejected():
+    token = _register("claims@example.com")
+    user_id = client.get("/api/v1/auth/me", headers=_auth(token)).json()["id"]
+    now = datetime.now(timezone.utc)
+    forged = jwt.encode(
+        {"sub": user_id, "iat": now, "exp": now + timedelta(minutes=5)},
+        settings.secret_key,
+        algorithm="HS256",
+    )
+    response = client.get("/api/v1/auth/me", headers=_auth(forged))
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid token"

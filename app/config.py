@@ -35,7 +35,7 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://localhost:3000",)
     cors_origin_regex: str = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
     secret_key: str = "change-me-in-production"
-    token_expire_minutes: int = 60 * 24 * 7
+    token_expire_minutes: int = 60 * 24
     database_url: str = DEFAULT_DATABASE_URL
     superadmin_email: str | None = None
     superadmin_password: str | None = None
@@ -63,7 +63,7 @@ class Settings:
             routine_engine=os.environ.get("BACKEND_ROUTINE_ENGINE", "ai"),
             rate_limit_enabled=rate_limit_enabled,
             secret_key=secret_key,
-            token_expire_minutes=int(os.environ.get("BACKEND_TOKEN_EXPIRE_MINUTES", 10080)),
+            token_expire_minutes=int(os.environ.get("BACKEND_TOKEN_EXPIRE_MINUTES", 1440)),
             database_url=os.environ.get("SYNCFIT_DATABASE_URL")
             or os.environ.get("DATABASE_URL")
             or DEFAULT_DATABASE_URL,

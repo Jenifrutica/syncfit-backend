@@ -59,13 +59,28 @@ def spend_password_check(password: str) -> None:
     verify_password(password, _DUMMY_HASH)
 
 
-def create_access_token(user_id: str) -> str:
-    expires = datetime.now(timezone.utc) + timedelta(minutes=settings.token_expire_minutes)
-    return jwt.encode({"sub": user_id, "exp": expires}, settings.secret_key, algorithm=ALGORITHM)
+def _password_fingerprint(user: User) -> str:
+    return hashlib.sha256(user.password_hash.encode()).hexdigest()[:16]
+
+
+def create_access_token(user: User) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user.id,
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.token_expire_minutes),
+        "pwv": _password_fingerprint(user),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> dict:
-    return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    return jwt.decode(
+        token,
+        settings.secret_key,
+        algorithms=[ALGORITHM],
+        options={"require": ["exp", "iat", "sub", "pwv"]},
+    )
 
 
 def current_user(
@@ -80,9 +95,11 @@ def current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         ) from exc
-    user = session.get(User, payload.get("sub"))
+    user = session.get(User, payload["sub"])
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if not hmac.compare_digest(payload["pwv"], _password_fingerprint(user)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
     if getattr(user, "active", True) is False:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
     return user

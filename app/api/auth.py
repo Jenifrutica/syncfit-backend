@@ -72,7 +72,7 @@ def register(request: Request, payload: RegisterIn, session: Session = Depends(g
     session.commit()
     session.refresh(user)
     return {
-        "access_token": create_access_token(user.id),
+        "access_token": create_access_token(user),
         "token_type": "bearer",
         "user": _public_user(user),
     }
@@ -94,7 +94,7 @@ def login(request: Request, payload: LoginIn, session: Session = Depends(get_ses
         user.password_hash = hash_password(payload.password)
         session.commit()
     return {
-        "access_token": create_access_token(user.id),
+        "access_token": create_access_token(user),
         "token_type": "bearer",
         "user": _public_user(user),
     }
