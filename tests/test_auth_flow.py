@@ -1,7 +1,10 @@
+import hashlib
 import zlib
 
 from fastapi.testclient import TestClient
+from syncfit_database import User
 
+from app.db import get_database
 from app.main import app
 
 client = TestClient(app)
@@ -210,3 +213,40 @@ def test_share_requires_permissions():
     )
     assert response.status_code == 422
 
+
+def test_duplicate_email_is_case_insensitive():
+    _register("case@example.com")
+    again = client.post(
+        "/api/v1/auth/register",
+        json={"email": "CASE@Example.com", "password": "secret123", "display_name": "Ana", "document_id": "7700000001"},
+    )
+
+    assert again.status_code == 409
+    assert again.json()["detail"] == "email already registered"
+
+
+def test_login_failures_share_the_same_message():
+    _register("same@example.com")
+    unknown = client.post("/api/v1/auth/login", json={"email": "nobody@example.com", "password": "secret123"})
+    wrong = client.post("/api/v1/auth/login", json={"email": "same@example.com", "password": "wrong-pass"})
+
+    #verify the status code of unknow and wrong user in login
+    assert unknown.status_code == wrong.status_code == 401
+    assert unknown.json() == wrong.json()
+
+
+def test_legacy_pbkdf2_hash_is_upgraded_on_login():
+
+    #verify if sha256 is upgraded to aragon2 in case that DB has already registered sha256 hash
+    _register("legacy@example.com")
+    salt = b"0123456789abcdef"
+    digest = hashlib.pbkdf2_hmac("sha256", b"secret123", salt, 200_000)
+    with get_database().session_scope() as s:
+        user = s.query(User).filter_by(email="legacy@example.com").one()
+        user.password_hash = f"pbkdf2_sha256$200000${salt.hex()}${digest.hex()}"
+
+    login = client.post("/api/v1/auth/login", json={"email": "legacy@example.com", "password": "secret123"})
+    assert login.status_code == 200
+    with get_database().session_scope() as s:
+        user = s.query(User).filter_by(email="legacy@example.com").one()
+        assert user.password_hash.startswith("$argon2id$")

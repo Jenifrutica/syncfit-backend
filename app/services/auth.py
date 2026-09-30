@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -16,14 +17,11 @@ from syncfit_database import User
 from ..config import settings
 from ..db import get_session
 
-from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError, InvalidHashError
-
 ALGORITHM = "HS256"
-_ITERATIONS = 200_000
+_LEGACY_PREFIX = "pbkdf2_sha256$"
 
 _ph = PasswordHasher()
-DUMMY_HASH = _ph.hash("dummy-password")
+_DUMMY_HASH = _ph.hash("dummy-password")
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -33,23 +31,32 @@ def hash_password(password: str) -> str:
 
 def _verify_pbkdf2(password: str, stored: str) -> bool:
     try:
-        iterations, salt_hex, digest_hex = stored.split("$")
-    except ValueError:
+        _, iterations, salt_hex, digest_hex = stored.split("$")
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations)
+        )
+    except ValueError: 
         return False
-
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations)
-    )
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
-def verify_password(password:str, stored:str) -> bool:
-    if stored.startswith("pbkdf2_sha256"):
+def verify_password(password: str, stored: str) -> bool:
+    if stored.startswith(_LEGACY_PREFIX):
         return _verify_pbkdf2(password=password, stored=stored)
     try:
-        return _ph.verify(password, stored)
-    except (VerifyMismatchError, InvalidHashError):
+        return _ph.verify(stored, password)
+    except (VerificationError, InvalidHashError):
         return False
+
+
+def needs_rehash(stored: str) -> bool:
+    """True for legacy PBKDF2 hashes or Argon2 hashes with outdated parameters."""
+    return stored.startswith(_LEGACY_PREFIX) or _ph.check_needs_rehash(stored)
+
+
+def spend_password_check(password: str) -> None:
+    """Take as long as a real check, so unknown emails can't be told apart by timing."""
+    verify_password(password, _DUMMY_HASH)
 
 
 def create_access_token(user_id: str) -> str:
@@ -100,6 +107,8 @@ __all__ = [
     "require_gym_admin",
     "hash_password",
     "verify_password",
+    "needs_rehash",
+    "spend_password_check",
     "create_access_token",
     "decode_token",
     "current_user",
