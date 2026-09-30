@@ -11,14 +11,7 @@ there the stand-in is never used. Run locally with:
 import hashlib
 import sys
 import types
-
-try:
-    import syncfit_database  # noqa: F401
-except ModuleNotFoundError:
-    _stub = types.ModuleType("syncfit_database")
-    _stub.User = type("User", (), {})
-    _stub.Database = type("Database", (), {})
-    sys.modules["syncfit_database"] = _stub
+import syncfit_database 
 
 from app.services.auth import hash_password, needs_rehash, verify_password
 
