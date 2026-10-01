@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 from syncfit_database import User
 
 from ..db import get_session
 from ..rate_limit import limiter
+from ..services import admin as admin_service
 from ..services.auth import (
     create_access_token,
     current_user,
     hash_password,
     needs_rehash,
+    revoke_tokens,
     spend_password_check,
     verify_password,
 )
@@ -34,6 +36,17 @@ class LoginIn(BaseModel):
     # Plain str on purpose: accounts created before EmailStr validation must
     # still be able to log in even if their email would now be rejected.
     email: str = Field(max_length=254)
+    password: str = Field(max_length=128)
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str = Field(max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class DeleteAccountIn(BaseModel):
+    # The current password confirms the operation. No min_length, so older
+    # accounts with shorter passwords can still delete themselves.
     password: str = Field(max_length=128)
 
 
@@ -103,6 +116,46 @@ def login(request: Request, payload: LoginIn, session: Session = Depends(get_ses
 @router.get("/me")
 def me(user: User = Depends(current_user)) -> dict:
     return _public_user(user)
+
+
+@router.post("/logout", status_code=204)
+def logout(user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
+    # Stateless JWTs can't be deleted, so bump the user's token version: every
+    # token issued so far (on any device) stops being accepted.
+    revoke_tokens(user)
+    session.commit()
+    return Response(status_code=204)
+
+
+@router.put("/password")
+@limiter.limit("5/minute")
+def change_password(request: Request, payload: ChangePasswordIn, user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict:
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=422, detail="new password must differ from the current one")
+    # Changing the hash changes the token fingerprint this revokes every existing token access
+    user.password_hash = hash_password(payload.new_password)
+    session.commit()
+    session.refresh(user)
+    return {
+        "access_token": create_access_token(user),
+        "token_type": "bearer",
+        "user": _public_user(user),
+    }
+
+
+@router.delete("/me", status_code=204)
+@limiter.limit("5/minute")
+def delete_account(request: Request, payload: DeleteAccountIn, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    if getattr(user, "role", None) == "SUPER_ADMIN":
+        # The platform must always keep its super admin account.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="super admin cannot delete itself")
+    admin_service.delete_user(session, user)
+    session.commit()
+    return Response(status_code=204)
 
 
 __all__ = ["router"]

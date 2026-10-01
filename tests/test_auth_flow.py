@@ -307,3 +307,125 @@ def test_token_without_required_claims_is_rejected():
     response = client.get("/api/v1/auth/me", headers=_auth(forged))
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid token"
+
+
+def test_change_password_revokes_old_tokens():
+    old_token = _register("flow-chpw@example.com")
+
+    wrong = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": "wrongpass1", "new_password": "newsecret456"},
+        headers=_auth(old_token),
+    )
+    assert wrong.status_code == 401
+
+    same = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": "secret123", "new_password": "secret123"},
+        headers=_auth(old_token),
+    )
+    assert same.status_code == 422
+
+    changed = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": "secret123", "new_password": "newsecret456"},
+        headers=_auth(old_token),
+    )
+    assert changed.status_code == 200, changed.text
+    new_token = changed.json()["access_token"]
+
+    assert client.get("/api/v1/auth/me", headers=_auth(old_token)).status_code == 401
+    assert client.get("/api/v1/auth/me", headers=_auth(new_token)).status_code == 200
+
+    old_login = client.post(
+        "/api/v1/auth/login", json={"email": "flow-chpw@example.com", "password": "secret123"}
+    )
+    assert old_login.status_code == 401
+    new_login = client.post(
+        "/api/v1/auth/login", json={"email": "flow-chpw@example.com", "password": "newsecret456"}
+    )
+    assert new_login.status_code == 200
+
+
+def test_change_password_requires_authentication():
+    response = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": "secret123", "new_password": "newsecret456"},
+    )
+    assert response.status_code == 401
+
+
+def test_delete_account_removes_user_and_data():
+    token = _register("flow-delete@example.com")
+    client.put(
+        "/api/v1/profiles/me",
+        json={"modality": "MENSTRUAL_CYCLE", "last_period_date": "2026-09-10", "cycle_length_days": 28},
+        headers=_auth(token),
+    )
+    client.post("/api/v1/capture", headers=_auth(token))
+
+    wrong = client.request("DELETE", "/api/v1/auth/me", json={"password": "wrong-pass"}, headers=_auth(token))
+    assert wrong.status_code == 401
+    assert client.get("/api/v1/auth/me", headers=_auth(token)).status_code == 200
+
+    deleted = client.request("DELETE", "/api/v1/auth/me", json={"password": "secret123"}, headers=_auth(token))
+    assert deleted.status_code == 204, deleted.text
+
+    assert client.get("/api/v1/auth/me", headers=_auth(token)).status_code == 401
+    login = client.post("/api/v1/auth/login", json={"email": "flow-delete@example.com", "password": "secret123"})
+    assert login.status_code == 401
+    with get_database().session_scope() as s:
+        assert s.query(User).filter_by(email="flow-delete@example.com").one_or_none() is None
+    # The email is free again.
+    _register("flow-delete@example.com")
+
+
+def test_delete_account_requires_authentication():
+    response = client.request("DELETE", "/api/v1/auth/me", json={"password": "secret123"})
+    assert response.status_code == 401
+
+
+def test_super_admin_cannot_delete_own_account():
+    with get_database().session_scope() as s:
+        ensure_superadmin(s)
+    root = client.post(
+        "/api/v1/auth/login", json={"email": "root@syncfit.dev", "password": "rootsecret123"}
+    ).json()["access_token"]
+    response = client.request("DELETE", "/api/v1/auth/me", json={"password": "rootsecret123"}, headers=_auth(root))
+    assert response.status_code == 403
+    assert client.get("/api/v1/auth/me", headers=_auth(root)).status_code == 200
+
+
+def test_logout_revokes_every_token_of_the_user():
+    first = _register("flow-logout@example.com")
+    second = client.post(
+        "/api/v1/auth/login", json={"email": "flow-logout@example.com", "password": "secret123"}
+    ).json()["access_token"]
+    assert client.get("/api/v1/auth/me", headers=_auth(second)).status_code == 200
+
+    logout = client.post("/api/v1/auth/logout", headers=_auth(first))
+    assert logout.status_code == 204, logout.text
+
+    # Both sessions (e.g. two devices) are closed.
+    for token in (first, second):
+        stale = client.get("/api/v1/auth/me", headers=_auth(token))
+        assert stale.status_code == 401
+        assert stale.json()["detail"] == "Token revoked"
+    assert client.post("/api/v1/auth/logout", headers=_auth(first)).status_code == 401
+
+    # Logging in again issues a token for the new version.
+    fresh = client.post(
+        "/api/v1/auth/login", json={"email": "flow-logout@example.com", "password": "secret123"}
+    ).json()["access_token"]
+    assert client.get("/api/v1/auth/me", headers=_auth(fresh)).status_code == 200
+
+
+def test_logout_does_not_affect_other_users():
+    mine = _register("flow-logout-a@example.com")
+    other = _register("flow-logout-b@example.com")
+    assert client.post("/api/v1/auth/logout", headers=_auth(mine)).status_code == 204
+    assert client.get("/api/v1/auth/me", headers=_auth(other)).status_code == 200
+
+
+def test_logout_requires_authentication():
+    assert client.post("/api/v1/auth/logout").status_code == 401

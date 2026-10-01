@@ -179,7 +179,7 @@ OpenAI SDK (optional reasoning).
 (`SYNCFIT_DATABASE_URL`, `BACKEND_SECRET_KEY`, `BACKEND_CORS_ORIGINS`,
 `BACKEND_CORS_ORIGIN_REGEX`). CORS allows localhost any port (regex).
 
-**Endpoints (`/api/v1`).** `auth/register|login|me`; `profiles/me` (GET/PUT),
+**Endpoints (`/api/v1`).** `auth/register|login|logout|me|password`; `profiles/me` (GET/PUT),
 `profiles`, `profiles/by-id/{id}`; `cycle`, `calendar`, `stats`; `capture`
 (query: muscle_groups, exercises_count, time_budget_minutes, energy_level,
 include_warmup); `routine/latest`; `catalog`, `muscle-groups`, `machines`,

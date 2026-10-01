@@ -50,17 +50,26 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def needs_rehash(stored: str) -> bool:
-    """True for legacy PBKDF2 hashes or Argon2 hashes with outdated parameters."""
     return stored.startswith(_LEGACY_PREFIX) or _ph.check_needs_rehash(stored)
 
 
 def spend_password_check(password: str) -> None:
-    """Take as long as a real check, so unknown emails can't be told apart by timing."""
     verify_password(password, _DUMMY_HASH)
 
 
 def _password_fingerprint(user: User) -> str:
     return hashlib.sha256(user.password_hash.encode()).hexdigest()[:16]
+
+
+def _token_version(user: User) -> int:
+    return getattr(user, "token_version", 0) or 0
+
+
+def revoke_tokens(user: User) -> None:
+    if not hasattr(User, "token_version"):
+        # Without the column the bump would only live in memory: logout would do nothing. Fail loudly instead.
+        raise RuntimeError("syncfit-database is outdated: users.token_version is missing")
+    user.token_version = _token_version(user) + 1
 
 
 def create_access_token(user: User) -> str:
@@ -70,6 +79,7 @@ def create_access_token(user: User) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=settings.token_expire_minutes),
         "pwv": _password_fingerprint(user),
+        "tv": _token_version(user),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
@@ -79,7 +89,7 @@ def decode_token(token: str) -> dict:
         token,
         settings.secret_key,
         algorithms=[ALGORITHM],
-        options={"require": ["exp", "iat", "sub", "pwv"]},
+        options={"require": ["exp", "iat", "sub", "pwv", "tv"]},
     )
 
 
@@ -99,6 +109,8 @@ def current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     if not hmac.compare_digest(payload["pwv"], _password_fingerprint(user)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+    if payload["tv"] != _token_version(user):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
     if getattr(user, "active", True) is False:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
@@ -127,6 +139,7 @@ __all__ = [
     "needs_rehash",
     "spend_password_check",
     "create_access_token",
+    "revoke_tokens",
     "decode_token",
     "current_user",
 ]
