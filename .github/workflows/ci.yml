@@ -46,6 +46,15 @@ jobs:
           path: deps/syncfit-database
           ref: main
           token: ${{ secrets.SYNCFIT_TOKEN }}
+      # The deterministic pattern engine (build_prescription) lives here; without
+      # it capture silently falls back to the legacy simulator builder.
+      - name: Checkout sibling syncfit-ai-reasoning
+        uses: actions/checkout@v4
+        with:
+          repository: Jenifrutica/syncfit-ai-reasoning
+          path: deps/syncfit-ai-reasoning
+          ref: main
+          token: ${{ secrets.SYNCFIT_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -54,7 +63,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install ./deps/syncfit-contracts/python ./deps/syncfit-core ./deps/syncfit-database
           pip install --no-deps -e ./deps/syncfit-simulator/py
+          pip install --no-deps ./deps/syncfit-ai-reasoning
           pip install --no-deps -e .
-          pip install fastapi "uvicorn[standard]" pydantic pyjwt sqlalchemy pytest httpx numpy "qrcode[pil]"
+          pip install fastapi "uvicorn[standard]" "pydantic[email]" pyjwt argon2-cffi slowapi sqlalchemy pytest httpx numpy "qrcode[pil]" openai
       - name: Test
         run: pytest -q

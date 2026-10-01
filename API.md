@@ -63,6 +63,9 @@ without data loss. Production must use Alembic.
 | POST | `/api/v1/auth/register` | public | `{email, password, display_name, document_id}` | `{access_token, token_type, user}` |
 | POST | `/api/v1/auth/login` | public | `{email, password}` | `{access_token, token_type, user}` |
 | GET | `/api/v1/auth/me` | auth | — | `user` |
+| PUT | `/api/v1/auth/password` | auth | `{current_password, new_password}` | `{access_token, token_type, user}` (old tokens are revoked) |
+| POST | `/api/v1/auth/logout` | auth | — | `204` (revokes every token of the user, on all devices) |
+| DELETE | `/api/v1/auth/me` | auth | `{password}` | `204` (deletes the account and all its data; super admin gets `403`) |
 
 `user = {id, email, display_name, document_id, role, active}`.
 `document_id` (cedula) is **required at registration** (6–15 digits, unique).

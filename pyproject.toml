@@ -12,8 +12,10 @@ license = { text = "Proprietary" }
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
-    "pydantic>=2.0",
+    "pydantic[email]>=2.0",
     "pyjwt>=2.8",
+    "argon2-cffi>=23.1",
+    "slowapi>=0.1.9",
     "qrcode[pil]>=7.4",
     "syncfit-database @ git+https://github.com/Jenifrutica/syncfit-database.git",
     "syncfit-contracts @ git+https://github.com/Jenifrutica/syncfit-contracts.git#subdirectory=python",

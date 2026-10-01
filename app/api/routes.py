@@ -709,8 +709,8 @@ def admin_create_gym_admin(payload: dict[str, Any], user: User = Depends(require
         document_id = validate_document_id(document_id) if document_id else None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if "@" not in email or len(password) < 6:
-        raise HTTPException(status_code=422, detail="email and password (>=6) required")
+    if "@" not in email or not 8 <= len(password) <= 128:
+        raise HTTPException(status_code=422, detail="email and password (8-128 chars) required")
     if session.query(User).filter_by(email=email.lower()).one_or_none() is not None:
         raise HTTPException(status_code=409, detail="email already registered")
     if document_id and session.query(User).filter_by(document_id=document_id).one_or_none() is not None:
@@ -820,8 +820,8 @@ def admin_activate_user(user_id: str, user: User = Depends(require_super_admin),
 def admin_reset_password(user_id: str, payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
     target = _target_user(session, user_id)
     password = str(payload.get("password", ""))
-    if len(password) < 6:
-        raise HTTPException(status_code=422, detail="password must be at least 6 characters")
+    if not 8 <= len(password) <= 128:
+        raise HTTPException(status_code=422, detail="password must be 8-128 characters")
     admin_service.reset_password(session, target, password)
     session.commit()
     return {"reset": target.id}

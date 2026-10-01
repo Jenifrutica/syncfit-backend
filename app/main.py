@@ -5,6 +5,10 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from .rate_limit import limiter
+
 from .config import settings
 from .api.auth import router as auth_router
 from .api.routes import router as api_router
@@ -16,6 +20,11 @@ __version__ = settings.version
 def create_app() -> FastAPI:
     """Build the FastAPI application."""
     app = FastAPI(title=settings.title, version=settings.version)
+
+    app.state.limiter = limiter    
+
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),

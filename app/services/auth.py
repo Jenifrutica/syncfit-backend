@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -17,36 +18,79 @@ from ..config import settings
 from ..db import get_session
 
 ALGORITHM = "HS256"
-_ITERATIONS = 200_000
+_LEGACY_PREFIX = "pbkdf2_sha256$"
+
+_ph = PasswordHasher()
+_DUMMY_HASH = _ph.hash("dummy-password")
 _bearer = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _ITERATIONS)
-    return f"pbkdf2_sha256${_ITERATIONS}${salt.hex()}${digest.hex()}"
+    return _ph.hash(password)
 
 
-def verify_password(password: str, stored: str) -> bool:
+def _verify_pbkdf2(password: str, stored: str) -> bool:
     try:
-        algorithm, iterations, salt_hex, digest_hex = stored.split("$")
-    except ValueError:
+        _, iterations, salt_hex, digest_hex = stored.split("$")
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations)
+        )
+    except ValueError: 
         return False
-    if algorithm != "pbkdf2_sha256":
-        return False
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations)
-    )
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
-def create_access_token(user_id: str) -> str:
-    expires = datetime.now(timezone.utc) + timedelta(minutes=settings.token_expire_minutes)
-    return jwt.encode({"sub": user_id, "exp": expires}, settings.secret_key, algorithm=ALGORITHM)
+def verify_password(password: str, stored: str) -> bool:
+    if stored.startswith(_LEGACY_PREFIX):
+        return _verify_pbkdf2(password=password, stored=stored)
+    try:
+        return _ph.verify(stored, password)
+    except (VerificationError, InvalidHashError):
+        return False
+
+
+def needs_rehash(stored: str) -> bool:
+    return stored.startswith(_LEGACY_PREFIX) or _ph.check_needs_rehash(stored)
+
+
+def spend_password_check(password: str) -> None:
+    verify_password(password, _DUMMY_HASH)
+
+
+def _password_fingerprint(user: User) -> str:
+    return hashlib.sha256(user.password_hash.encode()).hexdigest()[:16]
+
+
+def _token_version(user: User) -> int:
+    return getattr(user, "token_version", 0) or 0
+
+
+def revoke_tokens(user: User) -> None:
+    if not hasattr(User, "token_version"):
+        # Without the column the bump would only live in memory: logout would do nothing. Fail loudly instead.
+        raise RuntimeError("syncfit-database is outdated: users.token_version is missing")
+    user.token_version = _token_version(user) + 1
+
+
+def create_access_token(user: User) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user.id,
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.token_expire_minutes),
+        "pwv": _password_fingerprint(user),
+        "tv": _token_version(user),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> dict:
-    return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    return jwt.decode(
+        token,
+        settings.secret_key,
+        algorithms=[ALGORITHM],
+        options={"require": ["exp", "iat", "sub", "pwv", "tv"]},
+    )
 
 
 def current_user(
@@ -61,9 +105,13 @@ def current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         ) from exc
-    user = session.get(User, payload.get("sub"))
+    user = session.get(User, payload["sub"])
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if not hmac.compare_digest(payload["pwv"], _password_fingerprint(user)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+    if payload["tv"] != _token_version(user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
     if getattr(user, "active", True) is False:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
     return user
@@ -88,7 +136,10 @@ __all__ = [
     "require_gym_admin",
     "hash_password",
     "verify_password",
+    "needs_rehash",
+    "spend_password_check",
     "create_access_token",
+    "revoke_tokens",
     "decode_token",
     "current_user",
 ]
