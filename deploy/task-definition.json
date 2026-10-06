@@ -1,0 +1,84 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "IMAGE_PLACEHOLDER",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "REASONING_PRODUCT",
+          "value": "go"
+        },
+        {
+          "name": "REASONING_MODEL",
+          "value": "deepseek-v4-pro"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "SYNCFIT_DATABASE_URL",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/SYNCFIT_DATABASE_URL"
+        },
+        {
+          "name": "BACKEND_SECRET_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/BACKEND_SECRET_KEY"
+        },
+        {
+          "name": "SUPERADMIN_EMAIL",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/SUPERADMIN_EMAIL"
+        },
+        {
+          "name": "SUPERADMIN_PASSWORD",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/SUPERADMIN_PASSWORD"
+        },
+        {
+          "name": "REASONING_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/REASONING_API_KEY"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/syncfit-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "api"
+        }
+      },
+      "systemControls": [],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "python -c \"import urllib.request as u; u.urlopen('http://localhost:8000/api/v1/health', timeout=3)\" || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      }
+    }
+  ],
+  "family": "syncfit-backend",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/syncfitTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "256",
+  "memory": "512"
+}
