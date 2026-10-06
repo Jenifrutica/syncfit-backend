@@ -12,7 +12,16 @@
         }
       ],
       "essential": true,
-      "environment": [],
+      "environment": [
+        {
+          "name": "REASONING_PRODUCT",
+          "value": "go"
+        },
+        {
+          "name": "REASONING_MODEL",
+          "value": "deepseek-v4-pro"
+        }
+      ],
       "mountPoints": [],
       "volumesFrom": [],
       "secrets": [
@@ -31,6 +40,10 @@
         {
           "name": "SUPERADMIN_PASSWORD",
           "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/SUPERADMIN_PASSWORD"
+        },
+        {
+          "name": "REASONING_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/REASONING_API_KEY"
         }
       ],
       "logConfiguration": {
