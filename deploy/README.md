@@ -16,4 +16,8 @@ placeholder `${AWS_ACCOUNT_ID}`:
   aws iam put-role-policy --role-name syncfit-github-deploy --policy-name deploy-backend --policy-document file:///tmp/policy.json
   ```
 
+> This repository uses immutable OIDC subject claims, so the trust policy matches
+> `repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:refs/heads/main`. Check the current
+> prefix with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`.
+
 Repository secrets required: `SYNCFIT_TOKEN`, `AWS_ROLE_ARN`, `AWS_ACCOUNT_ID`.

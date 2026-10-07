@@ -12,7 +12,7 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:Jenifrutica/syncfit-backend:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:Jenifrutica@228820075/syncfit-backend@1378915225:ref:refs/heads/main"
         }
       }
     }
