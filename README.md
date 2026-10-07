@@ -230,3 +230,10 @@ available machines scale weights; body comp + goal feed macros.
   yields a gentle, still-active routine; `k_load` is preserved.
 - Example: super admin creates `nico` (Asgard) and `daniel` (Valhalla); each gym
   admin creates their own gym(s) and manages machines.
+
+## Roadmap · Qué falta (español)
+
+> Estado: **implementado** (API, pipeline de rutina, admin, docs: `API.md`, `docs/FUNCTIONS.md`, `docs/openapi.json`, Dockerfile).
+
+- (Opcional) Tests para rate-limiting (`slowapi`) y algunos endpoints de admin.
+- (Opcional) Exponer `/docs` solo en entornos de desarrollo.
