@@ -23,7 +23,7 @@
         },
         {
           "name": "REASONING_MODEL",
-          "value": "deepseek-v4-pro"
+          "value": "deepseek-v4.1-flash"
         },
         {
           "name": "REASONING_FALLBACK_MODEL",
@@ -31,15 +31,15 @@
         },
         {
           "name": "REASONING_TIMEOUT",
-          "value": "90"
+          "value": "100"
         },
         {
           "name": "REASONING_FALLBACK_TIMEOUT",
-          "value": "20"
+          "value": "30"
         },
         {
           "name": "REASONING_DEADLINE",
-          "value": "115"
+          "value": "140"
         }
       ],
       "mountPoints": [],

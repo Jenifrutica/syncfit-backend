@@ -33,11 +33,11 @@ Environment (`.env`, git-ignored; see `.env.example`):
 | `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` / `SUPERADMIN_NAME` | — | Seed super admin on startup. |
 | `BACKEND_ROUTINE_ENGINE` | `ai` | `ai` (OpenCode models) or `deterministic` (fast, offline). |
 | `REASONING_API_KEY` | — | OpenCode Go key shared by primary and fallback models. |
-| `REASONING_MODEL` | `deepseek-v4-pro` | Primary reasoning model. |
+| `REASONING_MODEL` | `deepseek-v4.1-flash` | Primary reasoning model. |
 | `REASONING_FALLBACK_MODEL` | `gpt-6-luna` | Responses API fallback for transient primary failures; empty disables it. |
-| `REASONING_TIMEOUT` | `90` | Primary model call timeout (seconds). |
-| `REASONING_FALLBACK_TIMEOUT` | `20` | Backup model call timeout (seconds). |
-| `REASONING_DEADLINE` | `115` | Whole generation budget (seconds); then the deterministic routine. |
+| `REASONING_TIMEOUT` | `100` | Primary model call timeout (seconds). |
+| `REASONING_FALLBACK_TIMEOUT` | `30` | Backup model call timeout (seconds). |
+| `REASONING_DEADLINE` | `140` | Whole generation budget (seconds); then the deterministic routine. |
 | `REASONING_PRODUCT` | `go` | OpenCode product (`go`/`zen`). |
 | `BACKEND_RESERVED_NAMES` / `BACKEND_NAME_EXCEPTIONS` | — | Name validation. |
 
