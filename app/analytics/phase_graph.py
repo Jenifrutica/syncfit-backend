@@ -55,3 +55,36 @@ class PhaseGraph:
         if source in self._edges:
             raise ValueError(f"phase {source} already has a next phase")
         self._edges[source] = PhaseTransition(target, restarts_cycle)
+
+    def set_first(self, phase: str) -> None:
+        self.node(phase)  # raises if the phase doesnt exist
+        self.first = phase
+
+    def walk(self):
+        # follows the edges from the first phase until the cycle restarts
+        if self.first is None:
+            raise ValueError("first phase not set")
+        visited: set[str] = set()
+        current = self.first
+        while True:
+            if current in visited:
+                raise ValueError(f"phase {current} repeated without restarting the cycle")
+            visited.add(current)
+            yield self._nodes[current]
+            transition = self.next_phase(current)
+            if transition is None or transition.restarts_cycle:
+                return
+            current = transition.target
+
+    def cycle_length(self) -> int:
+        return sum(node.length for node in self.walk())
+
+    def phase_for_day(self, day: int) -> PhaseNode:
+        if day < 1:
+            raise ValueError("day must be positive")
+        # day 30 of a 28 day cycle is day 2 of the next one
+        day = (day - 1) % self.cycle_length() + 1
+        for node in self.walk():
+            if node.contains(day):
+                return node
+        raise ValueError(f"no phase contains day {day}")
