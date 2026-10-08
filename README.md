@@ -129,11 +129,12 @@ Python 3.11+, FastAPI, WebSockets, Pydantic, imports `syncfit-core` and `syncfit
 ## Routine engine (two AIs)
 
 `capture` runs hardware -> **local model** (`syncfit-core`: biomarkers + `k_load`)
--> **DeepSeek** (`syncfit-ai-reasoning`, OpenCode):
+-> **DeepSeek** (`syncfit-ai-reasoning`, OpenCode Go), with **GPT-6 Luna** as a
+Responses API fallback on transient provider/network failures:
 
 - The local model produces a `PhysiologicalAssessment`; DeepSeek never recomputes `k_load`.
-- `BACKEND_ROUTINE_ENGINE=ai|deterministic` (default `ai`); the deterministic
-  evidence engine is also the fallback.
+- `BACKEND_ROUTINE_ENGINE=ai|deterministic` (default `ai`); if both generative
+  models fail, the planner returns its deterministic evidence-based routine.
 - Symptom `avoid_patterns` become `contraindicated_patterns`; responses include
   `assessment`, `biomarkers` and per-exercise `movement_pattern` / `rationale`.
 
@@ -151,8 +152,9 @@ All code, comments, documentation and commits in this repository are written in 
 
 ## Handoff for the team
 
-**Role.** FastAPI runtime: orchestrates hardware → core → DeepSeek → validator,
-enforces the system rules, persists and serves the frontend.
+**Role.** FastAPI runtime: orchestrates hardware → core → DeepSeek (GPT-6 Luna
+transient-failure backup) → validator, enforces the system rules, persists and
+serves the frontend.
 
 **Run / test.** `uvicorn app.main:app --port 8000` (no `--reload`; editable
 siblings are not hot-reloaded) · `pytest`.

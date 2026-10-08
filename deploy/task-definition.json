@@ -20,6 +20,10 @@
         {
           "name": "REASONING_MODEL",
           "value": "deepseek-v4-pro"
+        },
+        {
+          "name": "REASONING_FALLBACK_MODEL",
+          "value": "gpt-6-luna"
         }
       ],
       "mountPoints": [],

@@ -1,6 +1,6 @@
 # SyncFit Edge — Backend integration guide
 
-FastAPI service that orchestrates the `hardware → local model → DeepSeek`
+FastAPI service that orchestrates the `hardware → local model → DeepSeek/GPT-6 Luna`
 pipeline, enforces the clinical/safety rules and persists everything. This guide
 is written for the frontend developer who will build the final UI.
 
@@ -31,9 +31,10 @@ Environment (`.env`, git-ignored; see `.env.example`):
 | `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins. |
 | `BACKEND_CORS_ORIGIN_REGEX` | localhost any port | Regex origin fallback. |
 | `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` / `SUPERADMIN_NAME` | — | Seed super admin on startup. |
-| `BACKEND_ROUTINE_ENGINE` | `ai` | `ai` (DeepSeek) or `deterministic` (fast, offline). |
-| `REASONING_API_KEY` | — | OpenCode Go key (DeepSeek). |
-| `REASONING_MODEL` | `deepseek-v4-pro` | Reasoning model. |
+| `BACKEND_ROUTINE_ENGINE` | `ai` | `ai` (OpenCode models) or `deterministic` (fast, offline). |
+| `REASONING_API_KEY` | — | OpenCode Go key shared by primary and fallback models. |
+| `REASONING_MODEL` | `deepseek-v4-pro` | Primary reasoning model. |
+| `REASONING_FALLBACK_MODEL` | `gpt-6-luna` | Responses API fallback for transient primary failures; empty disables it. |
 | `REASONING_PRODUCT` | `go` | OpenCode product (`go`/`zen`). |
 | `BACKEND_RESERVED_NAMES` / `BACKEND_NAME_EXCEPTIONS` | — | Name validation. |
 
@@ -210,11 +211,12 @@ sets, description, how_to, tips, machine_id, machine_name, movement_pattern, rat
 ```
 hardware/simulator → syncfit-core (DSP + RandomForest → biomarkers + k_load)
    → PhysiologicalAssessment → DeepSeek (OpenCode Go) designs the routine
+   → GPT-6 Luna (Responses API) on transient DeepSeek/provider failures
    → deterministic enforcement → persistence → response
 ```
 - The model **never recomputes `k_load`** (always echoed).
-- `engine_used` is `deepseek` or `deterministic` (fallback), so the UI can show
-  "Reasoned by DeepSeek".
+- `engine_used` reports `deepseek`, `gpt-6-luna`, or `deterministic` if both
+  generative models fail. Every generated routine passes deterministic enforcement.
 - **Equipment filters (priority):** (1) gym machines, (2) free equipment
   registered in the gym, (3) bodyweight. A registered **bench** enables
   Bulgarian/step-ups, dumbbells enable `db-*`, etc.

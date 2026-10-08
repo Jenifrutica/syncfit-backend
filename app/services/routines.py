@@ -53,7 +53,7 @@ def generate_routine(
     """Generate a routine.
 
     ``engine``:
-    - ``ai``: DeepSeek (OpenCode) reasons the routine from the local-model state.
+    - ``ai``: OpenCode reasoning (DeepSeek, GPT-6 Luna on transient failures).
     - ``deterministic``: the evidence-based pattern engine (fast, same guarantees).
     - ``simulator``: legacy catalog builder (fallback).
 

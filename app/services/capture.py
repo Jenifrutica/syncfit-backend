@@ -183,8 +183,8 @@ def capture(
         objective=profile.objective if profile is not None else None,
         include_warmup=include_warmup,
     )
-    # DeepSeek (OpenCode) reasons the routine from the assessment; deterministic
-    # evidence engine if the AI is unavailable.
+    # OpenCode models reason from the assessment; deterministic evidence is the
+    # last resort if both generative calls are unavailable.
     try:
         payload = generate_routine(
             request,
