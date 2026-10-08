@@ -14,6 +14,10 @@
       "essential": true,
       "environment": [
         {
+          "name": "BACKEND_CORS_ORIGINS",
+          "value": "https://syncfit.jenilarper.dev"
+        },
+        {
           "name": "REASONING_PRODUCT",
           "value": "go"
         },
@@ -24,6 +28,18 @@
         {
           "name": "REASONING_FALLBACK_MODEL",
           "value": "gpt-6-luna"
+        },
+        {
+          "name": "REASONING_TIMEOUT",
+          "value": "90"
+        },
+        {
+          "name": "REASONING_FALLBACK_TIMEOUT",
+          "value": "20"
+        },
+        {
+          "name": "REASONING_DEADLINE",
+          "value": "115"
         }
       ],
       "mountPoints": [],

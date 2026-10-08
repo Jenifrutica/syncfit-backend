@@ -28,13 +28,16 @@ Environment (`.env`, git-ignored; see `.env.example`):
 | `SYNCFIT_DATABASE_URL` / `DATABASE_URL` | local Postgres | Database URL. |
 | `BACKEND_SECRET_KEY` | change-me | JWT signing secret (use a long random string). |
 | `BACKEND_TOKEN_EXPIRE_MINUTES` | 10080 | Token lifetime (7 days). |
-| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins. |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins (production: the frontend origin, since the API is served from its own subdomain). |
 | `BACKEND_CORS_ORIGIN_REGEX` | localhost any port | Regex origin fallback. |
 | `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` / `SUPERADMIN_NAME` | — | Seed super admin on startup. |
 | `BACKEND_ROUTINE_ENGINE` | `ai` | `ai` (OpenCode models) or `deterministic` (fast, offline). |
 | `REASONING_API_KEY` | — | OpenCode Go key shared by primary and fallback models. |
 | `REASONING_MODEL` | `deepseek-v4-pro` | Primary reasoning model. |
 | `REASONING_FALLBACK_MODEL` | `gpt-6-luna` | Responses API fallback for transient primary failures; empty disables it. |
+| `REASONING_TIMEOUT` | `90` | Primary model call timeout (seconds). |
+| `REASONING_FALLBACK_TIMEOUT` | `20` | Backup model call timeout (seconds). |
+| `REASONING_DEADLINE` | `115` | Whole generation budget (seconds); then the deterministic routine. |
 | `REASONING_PRODUCT` | `go` | OpenCode product (`go`/`zen`). |
 | `BACKEND_RESERVED_NAMES` / `BACKEND_NAME_EXCEPTIONS` | — | Name validation. |
 
