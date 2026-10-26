@@ -91,13 +91,42 @@
         }
       }
     },
-    "/api/v1/auth/me": {
-      "get": {
+    "/api/v1/auth/logout": {
+      "post": {
         "tags": [
           "auth"
         ],
-        "summary": "Me",
-        "operationId": "me_api_v1_auth_me_get",
+        "summary": "Logout",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/password": {
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change Password",
+        "operationId": "change_password_api_v1_auth_password_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordIn"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -106,7 +135,82 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Me Api V1 Auth Me Get"
+                  "title": "Response Change Password Api V1 Auth Password Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/account": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "summary": "Get Account",
+        "operationId": "get_account_api_v1_account_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Account Api V1 Account Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "account"
+        ],
+        "summary": "Delete Account",
+        "operationId": "delete_account_api_v1_account_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -899,10 +1003,10 @@
         }
       }
     },
-    "/api/v1/profiles/me": {
+    "/api/v1/profile": {
       "get": {
         "summary": "Get My Profile",
-        "operationId": "get_my_profile_api_v1_profiles_me_get",
+        "operationId": "get_my_profile_api_v1_profile_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -911,7 +1015,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get My Profile Api V1 Profiles Me Get"
+                  "title": "Response Get My Profile Api V1 Profile Get"
                 }
               }
             }
@@ -925,7 +1029,7 @@
       },
       "put": {
         "summary": "Update My Profile",
-        "operationId": "update_my_profile_api_v1_profiles_me_put",
+        "operationId": "update_my_profile_api_v1_profile_put",
         "requestBody": {
           "content": {
             "application/json": {
@@ -946,7 +1050,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Update My Profile Api V1 Profiles Me Put"
+                  "title": "Response Update My Profile Api V1 Profile Put"
                 }
               }
             }
@@ -2379,10 +2483,10 @@
         }
       }
     },
-    "/api/v1/admin/me": {
+    "/api/v1/admin/account": {
       "get": {
-        "summary": "Admin Me",
-        "operationId": "admin_me_api_v1_admin_me_get",
+        "summary": "Admin Account",
+        "operationId": "admin_account_api_v1_admin_account_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2391,7 +2495,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Admin Me Api V1 Admin Me Get"
+                  "title": "Response Admin Account Api V1 Admin Account Get"
                 }
               }
             }
@@ -2841,6 +2945,41 @@
   },
   "components": {
     "schemas": {
+      "ChangePasswordIn": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "ChangePasswordIn"
+      },
+      "DeleteAccountIn": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "DeleteAccountIn"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2858,10 +2997,12 @@
         "properties": {
           "email": {
             "type": "string",
+            "maxLength": 254,
             "title": "Email"
           },
           "password": {
             "type": "string",
+            "maxLength": 128,
             "title": "Password"
           }
         },
@@ -2876,11 +3017,13 @@
         "properties": {
           "email": {
             "type": "string",
+            "format": "email",
             "title": "Email"
           },
           "password": {
             "type": "string",
-            "minLength": 6,
+            "maxLength": 128,
+            "minLength": 8,
             "title": "Password"
           },
           "display_name": {

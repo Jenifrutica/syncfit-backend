@@ -181,7 +181,7 @@ OpenAI SDK (optional reasoning).
 (`SYNCFIT_DATABASE_URL`, `BACKEND_SECRET_KEY`, `BACKEND_CORS_ORIGINS`,
 `BACKEND_CORS_ORIGIN_REGEX`). CORS allows localhost any port (regex).
 
-**Endpoints (`/api/v1`).** `auth/register|login|logout|me|password`; `profiles/me` (GET/PUT),
+**Endpoints (`/api/v1`).** `auth/register|login|logout|password`; `account` (GET/DELETE); `profile` (GET/PUT),
 `profiles`, `profiles/by-id/{id}`; `cycle`, `calendar`, `stats`; `capture`
 (query: muscle_groups, exercises_count, time_budget_minutes, energy_level,
 include_warmup); `routine/latest`; `catalog`, `muscle-groups`, `machines`,
@@ -210,12 +210,12 @@ available machines scale weights; body comp + goal feed macros.
 
 ## Roles, super admin and gyms
 
-- **Roles** on `users.role`: `ATHLETE`, `GYM_ADMIN`, `SUPER_ADMIN`. `/auth/me`,
+- **Roles** on `users.role`: `ATHLETE`, `GYM_ADMIN`, `SUPER_ADMIN`. `/account`,
   login and register return `role`.
 - **Super admin bootstrap (env):** `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`,
   `SUPERADMIN_NAME`. Seeded idempotently on startup.
 - **Admin API:** `POST/GET /admin/gym-admins` (super admin creates/lists gym
-  admins), `GET /admin/gyms`, `GET /admin/me`.
+  admins), `GET /admin/gyms`, `GET /admin/account`.
 - **Gyms (admin):** creation and machine management require the gym owner.
   `POST /gyms`, `POST /gyms/{id}/machines`,
   `PATCH /gyms/{id}/machines/{machine_id}`,
