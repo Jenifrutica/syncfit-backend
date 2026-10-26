@@ -222,7 +222,7 @@ def get_energy(profile_id: str | None = Query(default=None)) -> list[dict[str, A
 # --- Authenticated athlete flow -------------------------------------------------
 
 
-@router.put("/profiles/me")
+@router.put("/profile")
 def update_my_profile(
     payload: dict[str, Any],
     user: User = Depends(current_user),
@@ -234,7 +234,7 @@ def update_my_profile(
     return _serialize_profile(profile)
 
 
-@router.get("/profiles/me")
+@router.get("/profile")
 def get_my_profile(
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
