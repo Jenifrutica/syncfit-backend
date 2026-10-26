@@ -125,6 +125,7 @@ localStorage.setItem("syncfit_token", access_token);
 | POST | `/routines?engine=simulator\|ai&profile_id=` | public | Generate a routine directly. |
 | GET | `/routine/latest` | auth | Latest stored routine. |
 | GET | `/stats` | auth | Streak / weekly training stats. |
+| GET | `/stats/biomarkers` | auth | Min / max / mean of a biomarker over `from`..`to` (default last 28 days) with 7-day windows. `metric`: `rmssd_hrv_ms`, `delta_temperature_c`, `isometric_force_loss_pct`. |
 
 `capture` returns, among others:
 `{session_id, routine_id, phase_inferred, fatigue_level, k_load, assessment,
