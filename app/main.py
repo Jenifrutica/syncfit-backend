@@ -41,10 +41,12 @@ def create_app() -> FastAPI:
     def _startup() -> None:
         from .db import get_database
         from .services.admin import ensure_superadmin
+        from .services.options import ensure_default_options
 
         session = get_database().session()
         try:
             ensure_superadmin(session)
+            ensure_default_options(session)
             session.commit()
         finally:
             session.close()
