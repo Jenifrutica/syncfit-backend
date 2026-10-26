@@ -11,9 +11,11 @@ from sqlalchemy.orm import Session
 from syncfit_contracts import EnergyCheckIn, RoutineRequest, SupplementRequest, UserProfile
 from syncfit_database import Routine, SupplementIntake, User
 
+from ..analytics.alert_heap import AlertHeap
 from ..config import settings
 from ..db import get_session
 from ..services import profiles
+from ..services.alerts import dispatch_alerts
 from ..services.auth import current_user, require_gym_admin, require_super_admin, verify_password
 from ..services import admin as admin_service
 from ..services.capture import capture
@@ -61,7 +63,9 @@ def catalog(language: str = Query(default="EN")) -> list[dict[str, Any]]:
 @router.post("/telemetry")
 def ingest_telemetry(frame: dict[str, Any]) -> dict[str, Any]:
     try:
-        return {"decision": evaluate_frame(frame)}
+        decision = evaluate_frame(frame)
+        decision.update(dispatch_alerts(AlertHeap(), frame))
+        return {"decision": decision}
     except Exception as exc:  # schema or model failure
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
