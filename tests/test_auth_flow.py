@@ -31,7 +31,7 @@ def _auth(token: str) -> dict:
 
 def test_register_login_and_me():
     token = _register("flow1@example.com")
-    me = client.get("/api/v1/auth/me", headers=_auth(token))
+    me = client.get("/api/v1/account", headers=_auth(token))
     assert me.status_code == 200
     assert me.json()["email"] == "flow1@example.com"
 
@@ -63,7 +63,7 @@ def test_onboarding_and_cycle_tracking():
         "cycle_length_days": 28,
         "loads": [{"exercise_id": "goblet-squat", "weight_kg": 20, "reps": 10}],
     }
-    updated = client.put("/api/v1/profiles/me", json=onboarding, headers=_auth(token))
+    updated = client.put("/api/v1/profile", json=onboarding, headers=_auth(token))
     assert updated.status_code == 200
     body = updated.json()
     assert body["loads"][0]["weight_kg"] == 20
@@ -77,7 +77,7 @@ def test_onboarding_and_cycle_tracking():
 def test_capture_flow_generates_and_stores_routine():
     token = _register("flow4@example.com")
     client.put(
-        "/api/v1/profiles/me",
+        "/api/v1/profile",
         json={
             "language": "EN",
             "modality": "MENSTRUAL_CYCLE",
@@ -110,7 +110,7 @@ def test_capture_requires_authentication():
 def test_calendar_and_machines_in_profile():
     token = _register("flow5@example.com")
     client.put(
-        "/api/v1/profiles/me",
+        "/api/v1/profile",
         json={
             "modality": "MENSTRUAL_CYCLE",
             "last_period_date": "2026-09-10",
@@ -122,7 +122,7 @@ def test_calendar_and_machines_in_profile():
         },
         headers=_auth(token),
     )
-    me = client.get("/api/v1/profiles/me", headers=_auth(token)).json()
+    me = client.get("/api/v1/profile", headers=_auth(token)).json()
     assert me["goal_phase"] == "VOLUME"
     assert me["body_fat_pct"] == 24.0
     assert "leg-press" in me["available_machines"]
@@ -141,7 +141,7 @@ def test_calendar_and_machines_in_profile():
 def test_supplement_intake_and_stats():
     token = _register("flow6@example.com")
     client.put(
-        "/api/v1/profiles/me",
+        "/api/v1/profile",
         json={"modality": "MENSTRUAL_CYCLE", "weekly_training_goal": 4, "rest_days_allowance": 3},
         headers=_auth(token),
     )
@@ -170,7 +170,7 @@ def test_supplement_intake_and_stats():
 def test_share_link_flow():
     token = _register("flow7@example.com")
     client.put(
-        "/api/v1/profiles/me",
+        "/api/v1/profile",
         json={
             "modality": "MENSTRUAL_CYCLE",
             "last_period_date": "2026-09-10",
@@ -273,7 +273,7 @@ def test_login_is_rate_limited():
 
 def test_password_reset_revokes_existing_tokens():
     token = _register("revoke@example.com")
-    user_id = client.get("/api/v1/auth/me", headers=_auth(token)).json()["id"]
+    user_id = client.get("/api/v1/account", headers=_auth(token)).json()["id"]
     with get_database().session_scope() as s:
         ensure_superadmin(s)
     root = client.post(
@@ -285,26 +285,26 @@ def test_password_reset_revokes_existing_tokens():
     )
     assert reset.status_code == 200
 
-    stale = client.get("/api/v1/auth/me", headers=_auth(token))
+    stale = client.get("/api/v1/account", headers=_auth(token))
     assert stale.status_code == 401
     assert stale.json()["detail"] == "Token revoked"
 
     login = client.post(
         "/api/v1/auth/login", json={"email": "revoke@example.com", "password": "newsecret123"}
     )
-    assert client.get("/api/v1/auth/me", headers=_auth(login.json()["access_token"])).status_code == 200
+    assert client.get("/api/v1/account", headers=_auth(login.json()["access_token"])).status_code == 200
 
 
 def test_token_without_required_claims_is_rejected():
     token = _register("claims@example.com")
-    user_id = client.get("/api/v1/auth/me", headers=_auth(token)).json()["id"]
+    user_id = client.get("/api/v1/account", headers=_auth(token)).json()["id"]
     now = datetime.now(timezone.utc)
     forged = jwt.encode(
         {"sub": user_id, "iat": now, "exp": now + timedelta(minutes=5)},
         settings.secret_key,
         algorithm="HS256",
     )
-    response = client.get("/api/v1/auth/me", headers=_auth(forged))
+    response = client.get("/api/v1/account", headers=_auth(forged))
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid token"
 
@@ -334,8 +334,8 @@ def test_change_password_revokes_old_tokens():
     assert changed.status_code == 200, changed.text
     new_token = changed.json()["access_token"]
 
-    assert client.get("/api/v1/auth/me", headers=_auth(old_token)).status_code == 401
-    assert client.get("/api/v1/auth/me", headers=_auth(new_token)).status_code == 200
+    assert client.get("/api/v1/account", headers=_auth(old_token)).status_code == 401
+    assert client.get("/api/v1/account", headers=_auth(new_token)).status_code == 200
 
     old_login = client.post(
         "/api/v1/auth/login", json={"email": "flow-chpw@example.com", "password": "secret123"}
@@ -358,20 +358,20 @@ def test_change_password_requires_authentication():
 def test_delete_account_removes_user_and_data():
     token = _register("flow-delete@example.com")
     client.put(
-        "/api/v1/profiles/me",
+        "/api/v1/profile",
         json={"modality": "MENSTRUAL_CYCLE", "last_period_date": "2026-09-10", "cycle_length_days": 28},
         headers=_auth(token),
     )
     client.post("/api/v1/capture", headers=_auth(token))
 
-    wrong = client.request("DELETE", "/api/v1/auth/me", json={"password": "wrong-pass"}, headers=_auth(token))
+    wrong = client.request("DELETE", "/api/v1/account", json={"password": "wrong-pass"}, headers=_auth(token))
     assert wrong.status_code == 401
-    assert client.get("/api/v1/auth/me", headers=_auth(token)).status_code == 200
+    assert client.get("/api/v1/account", headers=_auth(token)).status_code == 200
 
-    deleted = client.request("DELETE", "/api/v1/auth/me", json={"password": "secret123"}, headers=_auth(token))
+    deleted = client.request("DELETE", "/api/v1/account", json={"password": "secret123"}, headers=_auth(token))
     assert deleted.status_code == 204, deleted.text
 
-    assert client.get("/api/v1/auth/me", headers=_auth(token)).status_code == 401
+    assert client.get("/api/v1/account", headers=_auth(token)).status_code == 401
     login = client.post("/api/v1/auth/login", json={"email": "flow-delete@example.com", "password": "secret123"})
     assert login.status_code == 401
     with get_database().session_scope() as s:
@@ -381,7 +381,7 @@ def test_delete_account_removes_user_and_data():
 
 
 def test_delete_account_requires_authentication():
-    response = client.request("DELETE", "/api/v1/auth/me", json={"password": "secret123"})
+    response = client.request("DELETE", "/api/v1/account", json={"password": "secret123"})
     assert response.status_code == 401
 
 
@@ -391,9 +391,9 @@ def test_super_admin_cannot_delete_own_account():
     root = client.post(
         "/api/v1/auth/login", json={"email": "root@syncfit.dev", "password": "rootsecret123"}
     ).json()["access_token"]
-    response = client.request("DELETE", "/api/v1/auth/me", json={"password": "rootsecret123"}, headers=_auth(root))
+    response = client.request("DELETE", "/api/v1/account", json={"password": "rootsecret123"}, headers=_auth(root))
     assert response.status_code == 403
-    assert client.get("/api/v1/auth/me", headers=_auth(root)).status_code == 200
+    assert client.get("/api/v1/account", headers=_auth(root)).status_code == 200
 
 
 def test_logout_revokes_every_token_of_the_user():
@@ -401,14 +401,14 @@ def test_logout_revokes_every_token_of_the_user():
     second = client.post(
         "/api/v1/auth/login", json={"email": "flow-logout@example.com", "password": "secret123"}
     ).json()["access_token"]
-    assert client.get("/api/v1/auth/me", headers=_auth(second)).status_code == 200
+    assert client.get("/api/v1/account", headers=_auth(second)).status_code == 200
 
     logout = client.post("/api/v1/auth/logout", headers=_auth(first))
     assert logout.status_code == 204, logout.text
 
     # Both sessions (e.g. two devices) are closed.
     for token in (first, second):
-        stale = client.get("/api/v1/auth/me", headers=_auth(token))
+        stale = client.get("/api/v1/account", headers=_auth(token))
         assert stale.status_code == 401
         assert stale.json()["detail"] == "Token revoked"
     assert client.post("/api/v1/auth/logout", headers=_auth(first)).status_code == 401
@@ -417,14 +417,14 @@ def test_logout_revokes_every_token_of_the_user():
     fresh = client.post(
         "/api/v1/auth/login", json={"email": "flow-logout@example.com", "password": "secret123"}
     ).json()["access_token"]
-    assert client.get("/api/v1/auth/me", headers=_auth(fresh)).status_code == 200
+    assert client.get("/api/v1/account", headers=_auth(fresh)).status_code == 200
 
 
 def test_logout_does_not_affect_other_users():
     mine = _register("flow-logout-a@example.com")
     other = _register("flow-logout-b@example.com")
     assert client.post("/api/v1/auth/logout", headers=_auth(mine)).status_code == 204
-    assert client.get("/api/v1/auth/me", headers=_auth(other)).status_code == 200
+    assert client.get("/api/v1/account", headers=_auth(other)).status_code == 200
 
 
 def test_logout_requires_authentication():

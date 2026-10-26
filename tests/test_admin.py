@@ -41,7 +41,7 @@ def test_superadmin_creates_gym_admin_and_gym_flow():
     reg = client.post("/api/v1/auth/register", json={"email": "ana@x.dev", "password": "secret123", "display_name": "Ana", "document_id": "3000000001"})
     assert reg.json()["user"]["role"] == "ATHLETE"
     ah = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
     joined = client.post("/api/v1/gyms/join", json={"code": code}, headers=ah)
     assert joined.status_code == 200
 
@@ -57,7 +57,7 @@ def test_athlete_joined_gyms_show_live_machines_and_switch():
 
     reg = client.post("/api/v1/auth/register", json={"email": "zoe@x.dev", "password": "secret123", "display_name": "Zoe", "document_id": "3000000002"})
     ah = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
 
     # Join is idempotent: calling twice yields a single membership.
     assert client.post("/api/v1/gyms/join", json={"code": gym_a["code"]}, headers=ah).status_code == 200
@@ -90,7 +90,7 @@ def test_athlete_joined_gyms_show_live_machines_and_switch():
     assert [j["name"] for j in joined] == ["Valhalla"]
 
     # The profile keeps only catalog picks, with no "gym:" pseudo-entries.
-    me = client.get("/api/v1/profiles/me", headers=ah).json()
+    me = client.get("/api/v1/profile", headers=ah).json()
     assert me["active_gym_id"] == gym_b["id"]
     assert not any(str(m).startswith("gym:") for m in me["available_machines"])
 
@@ -151,7 +151,7 @@ def test_capture_prefers_gym_machine_with_photo():
 
     reg = client.post("/api/v1/auth/register", json={"email": "sif@x.dev", "password": "secret123", "display_name": "Sif", "document_id": "3000000003"})
     ah = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
     client.post("/api/v1/gyms/join", json={"code": gym["code"]}, headers=ah)
 
     captured = client.post("/api/v1/capture?muscle_groups=QUADRICEPS&exercises_count=1", headers=ah)
@@ -223,7 +223,7 @@ def test_capture_uses_machine_matched_by_name_without_exercise_ids():
     assert created.status_code == 200
     reg = client.post("/api/v1/auth/register", json={"email": "fuzzyathlete@x.dev", "password": "secret123", "display_name": "Fuzzy Athlete", "document_id": "5000000001"})
     ah = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
     client.post("/api/v1/gyms/join", json={"code": gym["code"]}, headers=ah)
     captured = client.post("/api/v1/capture?muscle_groups=GLUTES&exercises_count=1", headers=ah)
     assert captured.status_code == 200, captured.text
@@ -237,7 +237,7 @@ def test_capture_uses_machine_matched_by_name_without_exercise_ids():
 def test_capture_glute_patterns_and_knee_pain_contraindication():
     reg = client.post("/api/v1/auth/register", json={"email": "pattern@x.dev", "password": "secret123", "display_name": "Pattern", "document_id": "6000000001"})
     h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE", "objective": "HYPERTROPHY"}, headers=h)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE", "objective": "HYPERTROPHY"}, headers=h)
 
     captured = client.post("/api/v1/capture?muscle_groups=GLUTES&exercises_count=5", headers=h)
     assert captured.status_code == 200, captured.text
@@ -249,7 +249,7 @@ def test_capture_glute_patterns_and_knee_pain_contraindication():
     assert captured.json()["assessment"]["source"] == "core"
 
     # Knee pain must exclude the lunge pattern (e.g. Bulgarian).
-    client.put("/api/v1/profiles/me", json={"symptoms": ["knee_pain"]}, headers=h)
+    client.put("/api/v1/profile", json={"symptoms": ["knee_pain"]}, headers=h)
     captured = client.post("/api/v1/capture?muscle_groups=GLUTES&exercises_count=5", headers=h)
     patterns = {entry["movement_pattern"] for entry in captured.json()["routine"]}
     assert "lunge" not in patterns and "squat" not in patterns
@@ -266,7 +266,7 @@ def test_machine_variant_wins_even_if_exercise_ids_are_generic():
     client.post(f"/api/v1/gyms/{gym['id']}/machines", json={"name": "Hip thrust machine", "exercise_ids": ["hip-thrust"]}, headers=g)
     reg = client.post("/api/v1/auth/register", json={"email": "genericath@x.dev", "password": "secret123", "display_name": "Gen Ath", "document_id": "7000000001"})
     ah = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE"}, headers=ah)
     client.post("/api/v1/gyms/join", json={"code": gym["code"]}, headers=ah)
     first = client.post("/api/v1/capture?muscle_groups=GLUTES&exercises_count=1", headers=ah).json()["routine"][0]
     assert first["exercise_id"] == "hip-thrust-machine", first
@@ -300,7 +300,7 @@ def test_capture_uses_multiple_gym_machines():
 
     reg = client.post("/api/v1/auth/register", json={"email": "multiath@x.dev", "password": "secret123", "display_name": "Multi Ath", "document_id": "8000000001"})
     ah = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE", "objective": "HYPERTROPHY"}, headers=ah)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE", "objective": "HYPERTROPHY"}, headers=ah)
     client.post("/api/v1/gyms/join", json={"code": gym["code"]}, headers=ah)
 
     body = client.post("/api/v1/capture?muscle_groups=GLUTES&exercises_count=5", headers=ah).json()
@@ -358,7 +358,7 @@ def test_bench_enables_bench_exercises():
     client.post(f"/api/v1/gyms/{gym['id']}/machines", json={"name": "Flat bench", "equipment_key": "bench", "equipment_type": "BENCH"}, headers=g)
     reg = client.post("/api/v1/auth/register", json={"email": "benchath@x.dev", "password": "secret123", "display_name": "Bench Ath", "document_id": "9000000001"})
     ah = {"Authorization": f"Bearer {reg.json()['access_token']}"}
-    client.put("/api/v1/profiles/me", json={"modality": "MENSTRUAL_CYCLE", "objective": "HYPERTROPHY"}, headers=ah)
+    client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE", "objective": "HYPERTROPHY"}, headers=ah)
     client.post("/api/v1/gyms/join", json={"code": gym["code"]}, headers=ah)
     routine = client.post("/api/v1/capture?muscle_groups=GLUTES&exercises_count=5", headers=ah).json()["routine"]
     by_pattern = {e["movement_pattern"]: e["exercise_id"] for e in routine}
