@@ -730,8 +730,8 @@ def admin_list_gyms(language: str = Query(default="EN"), user: User = Depends(re
     return [gyms_service.serialize_gym(g, language) for g in session.query(__import__("syncfit_database").Gym).all()]
 
 
-@router.get("/admin/me")
-def admin_me(user: User = Depends(require_super_admin)) -> dict[str, Any]:
+@router.get("/admin/account")
+def admin_account(user: User = Depends(require_super_admin)) -> dict[str, Any]:
     return admin_service.serialize_user(user)
 
 
