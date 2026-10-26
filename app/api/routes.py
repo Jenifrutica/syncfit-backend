@@ -26,6 +26,7 @@ from ..services.calendar import build_calendar
 from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
 from ..services.machines import list_machines
+from ..services.options import list_options
 from ..services.routines import generate_routine
 from ..services.sharing import (
     build_shared_profile,
@@ -49,6 +50,12 @@ router = APIRouter()
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": settings.version}
+
+
+@router.get("/options")
+def options(language: str = Query(default="EN"), session: Session = Depends(get_session)) -> dict[str, list[dict[str, Any]]]:
+    """Selectable values (muscle groups, objectives, goal phases) read from the database."""
+    return list_options(session, language)
 
 
 @router.get("/muscle-groups")

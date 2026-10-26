@@ -130,6 +130,7 @@ localStorage.setItem("syncfit_token", access_token);
 | POST | `/routines?engine=simulator\|ai&profile_id=` | public | Generate a routine directly. |
 | GET | `/routine/latest` | auth | Latest stored routine. |
 | GET | `/stats` | auth | Streak / weekly training stats. |
+| GET | `/options?language=` | public | Selectable values read from the database: `muscle_group_isolated`, `muscle_group_general`, `objective`, `goal_phase`; each item is `{value, label, labels}`. |
 | GET | `/stats/biomarkers` | auth | Min / max / mean of a biomarker over `from`..`to` (default last 28 days) with 7-day windows. `metric`: `rmssd_hrv_ms`, `delta_temperature_c`, `isometric_force_loss_pct`. |
 
 `capture` returns, among others:
