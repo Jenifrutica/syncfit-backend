@@ -62,6 +62,11 @@ without data loss. Production must use Alembic.
 
 ## 3. Authentication
 
+> **Passwords never travel in plain text.** Every password field (`password`, `current_password`,
+> `new_password`, `admin_password`) carries the client digest: PBKDF2-HMAC-SHA256, 100 000 iterations,
+> salt `syncfit:<lower-cased email>`, hex encoded (64 chars). The server hashes that digest with Argon2.
+> Reference implementations: `app/services/credentials.py` and `lib/password.ts` in the frontend.
+
 | Method | Path | Access | Body | Returns |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/register` | public | `{email, password, display_name, document_id}` | `{access_token, token_type, user}` |
