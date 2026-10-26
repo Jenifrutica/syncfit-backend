@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,6 +19,7 @@ from ..services import admin as admin_service
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
 from syncfit_contracts import load_symptoms, localize
+from ..services.biomarkers import biomarker_summary
 from ..services.calendar import build_calendar
 from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
@@ -358,6 +359,22 @@ def stats(
 ) -> dict[str, Any]:
     profile = profiles_db.get_profile(session, user)
     return compute_stats(session, user, profile)
+
+
+@router.get("/stats/biomarkers")
+def stats_biomarkers(
+    metric: str = Query(default="rmssd_hrv_ms"),
+    start: date | None = Query(default=None, alias="from"),
+    end: date | None = Query(default=None, alias="to"),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    end = end or date.today()
+    start = start or end - timedelta(days=27)
+    try:
+        return biomarker_summary(session, user, metric, start, end)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/supplement-intakes")
