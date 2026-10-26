@@ -66,10 +66,10 @@ without data loss. Production must use Alembic.
 |---|---|---|---|---|
 | POST | `/api/v1/auth/register` | public | `{email, password, display_name, document_id}` | `{access_token, token_type, user}` |
 | POST | `/api/v1/auth/login` | public | `{email, password}` | `{access_token, token_type, user}` |
-| GET | `/api/v1/auth/me` | auth | — | `user` |
+| GET | `/api/v1/account` | auth | — | `user` |
 | PUT | `/api/v1/auth/password` | auth | `{current_password, new_password}` | `{access_token, token_type, user}` (old tokens are revoked) |
 | POST | `/api/v1/auth/logout` | auth | — | `204` (revokes every token of the user, on all devices) |
-| DELETE | `/api/v1/auth/me` | auth | `{password}` | `204` (deletes the account and all its data; super admin gets `403`) |
+| DELETE | `/api/v1/account` | auth | `{password}` | `204` (deletes the account and all its data; super admin gets `403`) |
 
 `user = {id, email, display_name, document_id, role, active}`.
 `document_id` (cedula) is **required at registration** (6–15 digits, unique).
@@ -112,8 +112,8 @@ localStorage.setItem("syncfit_token", access_token);
 ### Profiles / cycle / calendar
 | Method | Path | Access | Purpose |
 |---|---|---|---|
-| PUT | `/profiles/me` | auth | Upsert athlete profile (onboarding/settings). |
-| GET | `/profiles/me` | auth | Profile + `document_id` + `timeline`. |
+| PUT | `/profile` | auth | Upsert athlete profile (onboarding/settings). |
+| GET | `/profile` | auth | Profile + `document_id` + `timeline`. |
 | GET | `/cycle` | auth | `{timeline}`. |
 | GET | `/calendar?month=&language=` | auth | Cycle/gestation calendar. |
 | POST/GET | `/profiles`, `/profiles/by-id/{id}`, `/energy` | public | In-memory profile/energy (guest/legacy). |
@@ -180,7 +180,7 @@ sets, description, how_to, tips, machine_id, machine_name, movement_pattern, rat
 |---|---|---|---|
 | POST/GET | `/admin/gym-admins` | super_admin | Create/list gym admins. |
 | GET | `/admin/gyms?language=` | super_admin | Inspect all gyms. |
-| GET | `/admin/me` | super_admin | Current admin. |
+| GET | `/admin/account` | super_admin | Current admin. |
 | GET | `/admin/users?role=&search=` | super_admin | List/search users. |
 | GET | `/admin/users/{id}` | super_admin | User + profile detail. |
 | PATCH | `/admin/users/{id}` | super_admin | Edit name/email/document. |
@@ -195,7 +195,7 @@ sets, description, how_to, tips, machine_id, machine_name, movement_pattern, rat
 ## 6. End-to-end journey (frontend)
 
 1. **Register** (athlete): `POST /auth/register` with `document_id`.
-2. **Onboarding**: `PUT /profiles/me` (modality, cycle/gestation, body comp, goal,
+2. **Onboarding**: `PUT /profile` (modality, cycle/gestation, body comp, goal,
    machines, symptoms, `weekly_training_goal`, `rest_days_allowance`).
 3. **Join gym**: `POST /gyms/join {code}` → `GET /gyms/joined` shows equipment.
 4. **Capture**: `POST /capture?muscle_groups=GLUTES&exercises_count=5` →
