@@ -77,6 +77,9 @@ class AlertHeap:
             self._sift_down(0)
         return top
 
+    def clear(self) -> None:
+        self._items.clear()
+
     def drain(self, limit: int | None = None) -> list[PhysiologicalAlert]:
         """Pop up to `limit` alerts, most severe first."""
         out: list[PhysiologicalAlert] = []
