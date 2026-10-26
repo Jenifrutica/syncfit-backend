@@ -17,7 +17,8 @@ from syncfit_database import (
 )
 
 from ..config import settings
-from .auth import hash_password
+from .auth import hash_password, verify_password
+from .credentials import client_digest
 
 
 def ensure_superadmin(session: Session) -> User | None:
@@ -26,17 +27,23 @@ def ensure_superadmin(session: Session) -> User | None:
     password = settings.superadmin_password
     if not email or not password:
         return None
+    # The browser logs in with the digest, so that is what must be stored.
+    digest = client_digest(email, password)
     user = session.query(User).filter_by(email=email.lower()).one_or_none()
     if user is None:
         user = User(
             email=email.lower(),
-            password_hash=hash_password(password),
+            password_hash=hash_password(digest),
             display_name=settings.superadmin_name,
             role="SUPER_ADMIN",
         )
         session.add(user)
     else:
         user.role = "SUPER_ADMIN"
+        if not verify_password(digest, user.password_hash):
+            # Accounts seeded before the digest existed (or after the secret was rotated).
+            user.password_hash = hash_password(digest)
+            user.token_version += 1
     session.flush()
     return user
 

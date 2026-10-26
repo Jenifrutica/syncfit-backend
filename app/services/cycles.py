@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from syncfit_core.graph import infer_phase_from_day
 from syncfit_database import Profile
+
+from ..analytics.phase_graph import build_cycle_graph, build_gestation_graph
 
 
 def compute_timeline(profile: Profile, today: date | None = None) -> dict | None:
@@ -18,22 +19,30 @@ def compute_timeline(profile: Profile, today: date | None = None) -> dict | None
             week = min(42, (today - profile.last_period_date).days // 7 + 1)
         if week is None:
             return None
-        trimester = 1 if week <= 13 else 2 if week <= 27 else 3
+        graph = build_gestation_graph()
+        node = graph.phase_for(week)
+        following = graph.next_phase(node.phase)
         return {
             "modality": "GESTATIONAL",
             "week": week,
-            "phase": f"TRIMESTER_{trimester}",
+            "phase": node.phase,
+            "next_phase": following.target if following else None,
+            "weeks_to_next_phase": graph.units_until(week, following.target) if following else None,
         }
 
     if profile.last_period_date is not None:
         length = profile.cycle_length_days or 28
         cycle_day = ((today - profile.last_period_date).days % length) + 1
-        phase = infer_phase_from_day("MENSTRUAL_CYCLE", min(cycle_day, 40))
+        graph = build_cycle_graph(length)
+        node = graph.phase_for(cycle_day)
+        following = graph.next_phase(node.phase)
         return {
             "modality": "MENSTRUAL_CYCLE",
             "cycle_day": cycle_day,
             "cycle_length_days": length,
-            "phase": phase.value,
+            "phase": node.phase,
+            "next_phase": following.target if following else None,
+            "days_to_next_phase": graph.units_until(cycle_day, following.target) if following else None,
         }
 
     return None

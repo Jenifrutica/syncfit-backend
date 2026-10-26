@@ -54,3 +54,16 @@ def test_telemetry_websocket_roundtrip():
         message = websocket.receive_json()
         assert message["type"] == "prescription"
         assert "k_load_multiplier" in message["payload"]
+
+
+def test_websocket_reports_buffered_samples(monkeypatch):
+    # Stub the engine: this test only checks the per-connection ring buffer.
+    monkeypatch.setattr("app.ws.routes.evaluate_frame", lambda frame: {"k_load_multiplier": 1.0})
+    frame = {"ppg_window": {"samples": [0.1] * 150}}
+    with client.websocket_connect("/api/v1/ws/telemetry") as websocket:
+        websocket.send_json({"type": "telemetry", "payload": frame})
+        first = websocket.receive_json()["payload"]["buffer"]
+        websocket.send_json({"type": "telemetry", "payload": frame})
+        second = websocket.receive_json()["payload"]["buffer"]
+    assert first == {"samples": 150, "seconds": 1.5, "dropped": 0}
+    assert second["samples"] == 300
