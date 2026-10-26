@@ -2,7 +2,11 @@ from fastapi.testclient import TestClient
 
 from app.db import get_database
 from app.main import app
+from app.services.credentials import client_digest
 from app.services.admin import ensure_superadmin
+
+# The super admin is seeded from the environment; the browser logs in with the digest.
+ROOT_PASSWORD = client_digest("root@syncfit.dev", "rootsecret123")
 
 client = TestClient(app)
 
@@ -19,7 +23,7 @@ def _ensure_root():
 
 def test_superadmin_creates_gym_admin_and_gym_flow():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     assert root
     h = {"Authorization": f"Bearer {root}"}
 
@@ -48,7 +52,7 @@ def test_superadmin_creates_gym_admin_and_gym_flow():
 
 def test_athlete_joined_gyms_show_live_machines_and_switch():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "eve@x.dev", "password": "secret123", "display_name": "Eve"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('eve@x.dev', 'secret123')}"}
@@ -97,7 +101,7 @@ def test_athlete_joined_gyms_show_live_machines_and_switch():
 
 def test_gym_admin_edits_and_deletes_machine():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "daniel@valhalla.dev", "password": "secret123", "display_name": "Daniel"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('daniel@valhalla.dev', 'secret123')}"}
@@ -137,7 +141,7 @@ def test_gym_admin_edits_and_deletes_machine():
 
 def test_capture_prefers_gym_machine_with_photo():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "freya@x.dev", "password": "secret123", "display_name": "Freya"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('freya@x.dev', 'secret123')}"}
@@ -171,7 +175,7 @@ def test_athlete_cannot_create_gym_admin():
 
 def test_gym_admin_renames_and_deletes_gym():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "rename@x.dev", "password": "secret123", "display_name": "Rename"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('rename@x.dev', 'secret123')}"}
@@ -213,7 +217,7 @@ def test_exercise_variants_endpoint():
 
 def test_capture_uses_machine_matched_by_name_without_exercise_ids():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "fuzzy@x.dev", "password": "secret123", "display_name": "Fuzzy"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('fuzzy@x.dev', 'secret123')}"}
@@ -257,7 +261,7 @@ def test_capture_glute_patterns_and_knee_pain_contraindication():
 
 def test_machine_variant_wins_even_if_exercise_ids_are_generic():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "generic@x.dev", "password": "secret123", "display_name": "Generic"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('generic@x.dev', 'secret123')}"}
@@ -275,7 +279,7 @@ def test_machine_variant_wins_even_if_exercise_ids_are_generic():
 
 def test_invalid_exercise_ids_are_sanitized():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "clean@x.dev", "password": "secret123", "display_name": "Clean"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('clean@x.dev', 'secret123')}"}
@@ -290,7 +294,7 @@ def test_invalid_exercise_ids_are_sanitized():
 
 def test_capture_uses_multiple_gym_machines():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "multi@x.dev", "password": "secret123", "display_name": "Multi"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('multi@x.dev', 'secret123')}"}
@@ -314,14 +318,14 @@ def test_capture_uses_multiple_gym_machines():
 
 def test_superadmin_cannot_create_gym():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     assert client.post("/api/v1/gyms", json={"name": "Nope"}, headers=rh).status_code == 403
 
 
 def test_superadmin_user_crud_flow():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "crud@x.dev", "password": "secret123", "display_name": "Crud"}, headers=rh)
     users = client.get("/api/v1/admin/users?search=crud@x.dev", headers=rh).json()
@@ -340,17 +344,17 @@ def test_superadmin_user_crud_flow():
 
     # Role change and delete require the super admin password.
     assert client.post(f"/api/v1/admin/users/{uid}/role", json={"role": "ATHLETE"}, headers=rh).status_code == 403
-    changed = client.post(f"/api/v1/admin/users/{uid}/role", json={"role": "ATHLETE", "admin_password": "rootsecret123"}, headers=rh)
+    changed = client.post(f"/api/v1/admin/users/{uid}/role", json={"role": "ATHLETE", "admin_password": ROOT_PASSWORD}, headers=rh)
     assert changed.status_code == 200 and changed.json()["role"] == "ATHLETE"
 
     assert client.request("DELETE", f"/api/v1/admin/users/{uid}", json={}, headers=rh).status_code == 403
-    assert client.request("DELETE", f"/api/v1/admin/users/{uid}", json={"admin_password": "rootsecret123"}, headers=rh).status_code == 204
+    assert client.request("DELETE", f"/api/v1/admin/users/{uid}", json={"admin_password": ROOT_PASSWORD}, headers=rh).status_code == 204
     assert client.get(f"/api/v1/admin/users/{uid}", headers=rh).status_code == 404
 
 
 def test_bench_enables_bench_exercises():
     _ensure_root()
-    root = _login("root@syncfit.dev", "rootsecret123")
+    root = _login("root@syncfit.dev", ROOT_PASSWORD)
     rh = {"Authorization": f"Bearer {root}"}
     client.post("/api/v1/admin/gym-admins", json={"email": "bench@x.dev", "password": "secret123", "display_name": "Bench"}, headers=rh)
     g = {"Authorization": f"Bearer {_login('bench@x.dev', 'secret123')}"}

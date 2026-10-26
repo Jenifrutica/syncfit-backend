@@ -9,8 +9,12 @@ from syncfit_database import User
 from app.config import settings
 from app.db import get_database
 from app.main import app
+from app.services.credentials import client_digest
 from app.rate_limit import limiter
 from app.services.admin import ensure_superadmin
+
+# The super admin is seeded from the environment; the browser logs in with the digest.
+ROOT_PASSWORD = client_digest("root@syncfit.dev", "rootsecret123")
 
 client = TestClient(app)
 
@@ -277,7 +281,7 @@ def test_password_reset_revokes_existing_tokens():
     with get_database().session_scope() as s:
         ensure_superadmin(s)
     root = client.post(
-        "/api/v1/auth/login", json={"email": "root@syncfit.dev", "password": "rootsecret123"}
+        "/api/v1/auth/login", json={"email": "root@syncfit.dev", "password": ROOT_PASSWORD}
     ).json()["access_token"]
 
     reset = client.post(
@@ -389,9 +393,9 @@ def test_super_admin_cannot_delete_own_account():
     with get_database().session_scope() as s:
         ensure_superadmin(s)
     root = client.post(
-        "/api/v1/auth/login", json={"email": "root@syncfit.dev", "password": "rootsecret123"}
+        "/api/v1/auth/login", json={"email": "root@syncfit.dev", "password": ROOT_PASSWORD}
     ).json()["access_token"]
-    response = client.request("DELETE", "/api/v1/account", json={"password": "rootsecret123"}, headers=_auth(root))
+    response = client.request("DELETE", "/api/v1/account", json={"password": ROOT_PASSWORD}, headers=_auth(root))
     assert response.status_code == 403
     assert client.get("/api/v1/account", headers=_auth(root)).status_code == 200
 

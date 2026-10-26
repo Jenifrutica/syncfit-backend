@@ -62,6 +62,11 @@ without data loss. Production must use Alembic.
 
 ## 3. Authentication
 
+> **Passwords never travel in plain text.** Every password field (`password`, `current_password`,
+> `new_password`, `admin_password`) carries the client digest: PBKDF2-HMAC-SHA256, 100 000 iterations,
+> salt `syncfit:<lower-cased email>`, hex encoded (64 chars). The server hashes that digest with Argon2.
+> Reference implementations: `app/services/credentials.py` and `lib/password.ts` in the frontend.
+
 | Method | Path | Access | Body | Returns |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/register` | public | `{email, password, display_name, document_id}` | `{access_token, token_type, user}` |
@@ -125,6 +130,7 @@ localStorage.setItem("syncfit_token", access_token);
 | POST | `/routines?engine=simulator\|ai&profile_id=` | public | Generate a routine directly. |
 | GET | `/routine/latest` | auth | Latest stored routine. |
 | GET | `/stats` | auth | Streak / weekly training stats. |
+| GET | `/stats/biomarkers` | auth | Min / max / mean of a biomarker over `from`..`to` (default last 28 days) with 7-day windows. `metric`: `rmssd_hrv_ms`, `delta_temperature_c`, `isometric_force_loss_pct`. |
 
 `capture` returns, among others:
 `{session_id, routine_id, phase_inferred, fatigue_level, k_load, assessment,
