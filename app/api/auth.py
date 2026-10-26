@@ -22,6 +22,8 @@ from ..services.auth import (
 from ..services.validation import validate_document_id, validate_person_name
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+# The signed-in person's own account: the token already says who it is, so no /me.
+account_router = APIRouter(prefix="/account", tags=["account"])
 
 
 class RegisterIn(BaseModel):
@@ -113,8 +115,8 @@ def login(request: Request, payload: LoginIn, session: Session = Depends(get_ses
     }
 
 
-@router.get("/me")
-def me(user: User = Depends(current_user)) -> dict:
+@account_router.get("")
+def get_account(user: User = Depends(current_user)) -> dict:
     return _public_user(user)
 
 
@@ -145,7 +147,7 @@ def change_password(request: Request, payload: ChangePasswordIn, user: User = De
     }
 
 
-@router.delete("/me", status_code=204)
+@account_router.delete("", status_code=204)
 @limiter.limit("5/minute")
 def delete_account(request: Request, payload: DeleteAccountIn, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
     if not verify_password(payload.password, user.password_hash):
@@ -158,4 +160,4 @@ def delete_account(request: Request, payload: DeleteAccountIn, user: User = Depe
     return Response(status_code=204)
 
 
-__all__ = ["router"]
+__all__ = ["router", "account_router"]
