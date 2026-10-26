@@ -6,8 +6,9 @@ from calendar import monthrange
 from datetime import date
 
 from syncfit_contracts import CalendarDay, CalendarKind, CycleCalendar
-from syncfit_core.graph import infer_phase_from_day
 from syncfit_database import Profile
+
+from ..analytics.phase_graph import build_cycle_graph, build_gestation_graph
 
 KIND_LABELS: dict[str, dict[str, str]] = {
     "CYCLE": {"en": "Period", "es": "Menstruación", "zh": "月经期"},
@@ -50,6 +51,8 @@ def build_calendar(
     lmp = profile.last_period_date if profile is not None else None
     length = (profile.cycle_length_days if profile is not None and profile.cycle_length_days else 28)
     gestation_week = profile.gestation_week if profile is not None else None
+    cycle_graph = build_cycle_graph(length)
+    gestation_graph = build_gestation_graph()
 
     for day in range(1, days_count + 1):
         current = date(year, mon, day)
@@ -61,9 +64,9 @@ def build_calendar(
                 week = max(1, (current - lmp).days // 7 + 1)
             else:
                 week = None
-            trimester = 1 if (week or 1) <= 13 else 2 if (week or 1) <= 27 else 3
-            kind = CalendarKind.LOW_IMPACT if trimester == 3 else CalendarKind.STRENGTH
-            phase = f"TRIMESTER_{trimester}"
+            node = gestation_graph.phase_for(week or 1)
+            kind = CalendarKind(node.training_kind)
+            phase = node.phase
             days.append(
                 CalendarDay(
                     date=iso,
@@ -77,7 +80,7 @@ def build_calendar(
 
         if lmp is not None:
             cycle_day = ((current - lmp).days % length) + 1
-            phase = infer_phase_from_day("MENSTRUAL_CYCLE", min(cycle_day, 40)).value
+            phase = cycle_graph.phase_for(cycle_day).phase
             if phase == "MENSTRUAL":
                 kind = CalendarKind.CYCLE
             elif phase == "OVULATORY":
