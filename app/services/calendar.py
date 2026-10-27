@@ -30,6 +30,57 @@ KIND_NOTES: dict[str, dict[str, str]] = {
     },
 }
 
+# Non-linear weekly template per trimester, Monday to Sunday.
+# Approved split: T1 3 strength / 2 low impact / 2 rest,
+# T2 2/2/3 and T3 1/2/4.
+GESTATION_WEEK: dict[str, tuple[str, ...]] = {
+    "TRIMESTER_1": (
+        "STRENGTH",
+        "LOW_IMPACT",
+        "STRENGTH",
+        "REST",
+        "STRENGTH",
+        "LOW_IMPACT",
+        "REST",
+    ),
+    "TRIMESTER_2": (
+        "STRENGTH",
+        "LOW_IMPACT",
+        "REST",
+        "STRENGTH",
+        "LOW_IMPACT",
+        "REST",
+        "REST",
+    ),
+    "TRIMESTER_3": (
+        "LOW_IMPACT",
+        "REST",
+        "STRENGTH",
+        "REST",
+        "LOW_IMPACT",
+        "REST",
+        "REST",
+    ),
+}
+
+GESTATION_NOTES: dict[str, dict[str, str]] = {
+    "STRENGTH": {
+        "en": "Strength day: controlled loads, breathing, no Valsalva.",
+        "es": "Día de fuerza: cargas controladas, respiración y sin Valsalva.",
+        "zh": "力量日：控制负荷、保持呼吸，避免憋气。",
+    },
+    "LOW_IMPACT": {
+        "en": "Low impact: stability, pelvic floor and comfortable range.",
+        "es": "Bajo impacto: estabilidad, suelo pélvico y rango cómodo.",
+        "zh": "低冲击：稳定、盆底与舒适幅度。",
+    },
+    "REST": {
+        "en": "Rest day: walk, breathe and recover.",
+        "es": "Descanso: camina, respira y recupera.",
+        "zh": "休息日：散步、呼吸与恢复。",
+    },
+}
+
 
 def _month_bounds(month: str | None) -> tuple[int, int]:
     if month:
@@ -65,15 +116,15 @@ def build_calendar(
             else:
                 week = None
             node = gestation_graph.phase_for(week or 1)
-            kind = CalendarKind(node.training_kind)
-            phase = node.phase
+            weekly = GESTATION_WEEK[node.phase]
+            kind = CalendarKind(weekly[current.weekday()])
             days.append(
                 CalendarDay(
                     date=iso,
                     kind=kind,
-                    phase=phase,
+                    phase=node.phase,
                     label=KIND_LABELS[kind.value],
-                    note=KIND_NOTES.get(kind.value),
+                    note=GESTATION_NOTES[kind.value],
                 )
             )
             continue

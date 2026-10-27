@@ -92,6 +92,8 @@ def _serialize_routine(routine: Routine | None) -> dict | None:
                 "weight_suggested_kg": item.weight_suggested_kg,
                 "image_url": item.image_url,
                 "how_to": item.how_to,
+                "setup": item.setup,
+                "pregnancy_tip": item.pregnancy_tip,
                 "tips": item.tips,
             }
             for item in routine.items

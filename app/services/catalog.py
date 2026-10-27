@@ -29,6 +29,11 @@ def get_catalog(language: str = "EN") -> list[dict[str, Any]]:
                 "impact": str(exercise.impact),
                 "image_url": exercise.image_url,
                 "media_url": exercise.media_url,
+                "supine": bool(getattr(exercise, "supine", False)),
+                "setup": exercise.setup.model_dump() if exercise.setup else None,
+                "pregnancy_tip": exercise.pregnancy_tip.model_dump()
+                if exercise.pregnancy_tip
+                else None,
                 "name_i18n": name_i18n,
                 "description_i18n": description_i18n,
             }

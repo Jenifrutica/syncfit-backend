@@ -102,10 +102,29 @@ def test_capture_flow_generates_and_stores_routine():
     order = [item["order_index"] for item in result["routine"]]
     assert order == sorted(order)  # stored in order
     assert result["phase_inferred"] == "OVULATORY"
+    assert all(item["setup"] for item in result["routine"])
+    assert all(item["pregnancy_tip"] for item in result["routine"])
 
     latest = client.get("/api/v1/routine/latest", headers=_auth(token))
     assert latest.status_code == 200
     assert latest.json()["items"]
+    assert all(item["setup"] for item in latest.json()["items"])
+    assert all(item["pregnancy_tip"] for item in latest.json()["items"])
+
+
+def test_alternatives_exclude_supine_in_gestational_week_16():
+    token = _register("gestalt16@example.com")
+    updated = client.put(
+        "/api/v1/profile",
+        json={"language": "ES", "modality": "GESTATIONAL", "gestation_week": 16, "loads": []},
+        headers=_auth(token),
+    )
+    assert updated.status_code == 200, updated.text
+    response = client.get(
+        "/api/v1/exercises/glute-bridge/alternatives", headers=_auth(token)
+    )
+    assert response.status_code == 200, response.text
+    assert all(not item["supine"] for item in response.json())
 
 
 def test_capture_requires_authentication():

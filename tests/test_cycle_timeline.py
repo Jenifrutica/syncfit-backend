@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -42,11 +43,31 @@ def test_gestation_timeline_has_no_phase_after_third_trimester():
     assert timeline["weeks_to_next_phase"] is None
 
 
-def test_calendar_marks_third_trimester_as_low_impact():
-    profile = _profile(modality="GESTATIONAL", gestation_week=35)
+def _gestation_week_counts(gestation_week):
+    profile = _profile(modality="GESTATIONAL", gestation_week=gestation_week)
     days = build_calendar(profile, date.today().strftime("%Y-%m")).days
-    assert {d.kind for d in days} == {"LOW_IMPACT"}
+    weeks: dict[tuple[int, int], list[str]] = {}
+    for day in days:
+        current = date.fromisoformat(day.date)
+        weeks.setdefault(current.isocalendar()[:2], []).append(day.kind)
+    return days, [Counter(week) for week in weeks.values() if len(week) == 7]
+
+
+def test_calendar_gestation_uses_non_linear_weekly_template():
+    days, full_weeks = _gestation_week_counts(35)
     assert {d.phase for d in days} == {"TRIMESTER_3"}
+    assert {d.kind for d in days} == {"LOW_IMPACT", "STRENGTH", "REST"}
+    for counts in full_weeks:
+        assert counts == Counter({"STRENGTH": 1, "LOW_IMPACT": 2, "REST": 4})
+
+
+def test_calendar_first_and_second_trimester_weekly_splits():
+    _, first = _gestation_week_counts(4)
+    for counts in first:
+        assert counts == Counter({"STRENGTH": 3, "LOW_IMPACT": 2, "REST": 2})
+    _, second = _gestation_week_counts(20)
+    for counts in second:
+        assert counts == Counter({"STRENGTH": 2, "LOW_IMPACT": 2, "REST": 3})
 
 
 def test_calendar_phases_follow_the_cycle_graph():

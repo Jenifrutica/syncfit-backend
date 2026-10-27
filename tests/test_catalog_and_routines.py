@@ -22,6 +22,10 @@ def test_catalog_endpoint_localizes_names():
     goblet = next(item for item in catalog if item["id"] == "goblet-squat")
     assert goblet["name"] == "Sentadilla goblet"
     assert goblet["image_url"].startswith("https://")
+    assert goblet["supine"] is False
+    assert "Sostén la mancuerna" in goblet["setup"]["es"]
+    bridge = next(item for item in catalog if item["id"] == "glute-bridge")
+    assert bridge["supine"] is True
 
 
 def test_create_routine_default_engine():

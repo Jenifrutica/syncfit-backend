@@ -227,10 +227,16 @@ def exercise_alternatives(exercise_id: str, language: str = Query(default="EN"),
     equipment = (
         gyms_service.available_equipment_keys(session, profile) if profile is not None else None
     )
+    exclude_supine = False
+    if profile is not None and profile.modality == "GESTATIONAL":
+        week = compute_timeline(profile).get("week")
+        exclude_supine = bool(week and week >= 16)
     try:
         from syncfit_ai import alternatives_for
 
-        return alternatives_for(exercise_id, equipment, language)
+        return alternatives_for(
+            exercise_id, equipment, language, exclude_supine=exclude_supine
+        )
     except Exception:
         from syncfit_contracts import variants_of
 
@@ -244,9 +250,15 @@ def exercise_alternatives(exercise_id: str, language: str = Query(default="EN"),
                 "available": True,
                 "variant_of": getattr(e, "variant_of", None),
                 "image_url": e.image_url,
+                "supine": bool(getattr(e, "supine", False)),
+                "setup": e.setup.model_dump() if e.setup else None,
+                "pregnancy_tip": e.pregnancy_tip.model_dump()
+                if e.pregnancy_tip
+                else None,
             }
             for e in variants_of(exercise_id)
             if e.id != exercise_id
+            and not (exclude_supine and getattr(e, "supine", False))
         ]
 
 
@@ -264,6 +276,11 @@ def exercise_variants(exercise_id: str, language: str = Query(default="EN")) -> 
             "image_url": exercise.image_url,
             "media_url": exercise.media_url,
             "variant_of": getattr(exercise, "variant_of", None),
+            "setup": exercise.setup.model_dump() if exercise.setup else None,
+            "pregnancy_tip": exercise.pregnancy_tip.model_dump()
+            if exercise.pregnancy_tip
+            else None,
+            "supine": bool(getattr(exercise, "supine", False)),
         }
         for exercise in variants_of(exercise_id)
     ]
@@ -421,6 +438,8 @@ def latest_routine(
                 "sets": item.sets,
                 "description": item.description,
                 "how_to": item.how_to,
+                "setup": item.setup,
+                "pregnancy_tip": item.pregnancy_tip,
                 "tips": item.tips,
                 "machine_id": item.machine_id,
                 "machine_name": item.machine_name,

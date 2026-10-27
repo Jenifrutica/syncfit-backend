@@ -54,6 +54,15 @@ def _gentle_entries(language: str) -> list[dict]:
                     "role": role,
                     "description": (lambda d: {"en": d.en, **(d.model_extra or {})})(e.description),
                     "how_to": (lambda d: {"en": d.en, **(d.model_extra or {})})(e.how_to or e.description),
+                    "setup": (lambda d: {"en": d.en, **(d.model_extra or {})})(e.setup)
+                    if e.setup
+                    else None,
+                    "pregnancy_tip": (lambda d: {"en": d.en, **(d.model_extra or {})})(
+                        e.pregnancy_tip
+                    )
+                    if e.pregnancy_tip
+                    else None,
+                    "supine": bool(getattr(e, "supine", False)),
                     "tips": [{"en": t.en, **(t.model_extra or {})} for t in (e.tips or [])],
                     "image_url": e.image_url,
                     "media_url": e.media_url,

@@ -211,8 +211,12 @@ def test_register_requires_valid_unique_document():
 def test_exercise_variants_endpoint():
     resp = client.get("/api/v1/exercises/hip-thrust-machine/variants")
     assert resp.status_code == 200
-    ids = {item["id"] for item in resp.json()}
+    items = resp.json()
+    ids = {item["id"] for item in items}
     assert {"hip-thrust", "smith-hip-thrust", "hip-thrust-machine"} <= ids
+    hip_thrust = next(item for item in items if item["id"] == "hip-thrust")
+    assert hip_thrust["supine"] is False
+    assert hip_thrust["setup"]
 
 
 def test_capture_uses_machine_matched_by_name_without_exercise_ids():
