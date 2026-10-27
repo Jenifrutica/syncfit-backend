@@ -56,6 +56,8 @@ def upsert_profile(session: Session, user: User, data: dict[str, Any]) -> Profil
         profile.symptoms = list(data["symptoms"])
     if "pain_levels" in data and data["pain_levels"] is not None:
         profile.pain_levels = dict(data["pain_levels"])
+    if "symptom_avoid_patterns" in data and data["symptom_avoid_patterns"] is not None:
+        profile.symptom_avoid_patterns = list(data["symptom_avoid_patterns"])
     if "current_supplements" in data and data["current_supplements"] is not None:
         profile.current_supplements = list(data["current_supplements"])
     if "supplement_macros" in data and data["supplement_macros"] is not None:

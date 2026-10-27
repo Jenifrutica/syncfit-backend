@@ -42,6 +42,7 @@ class Settings:
     superadmin_name: str = "Super Admin"
     routine_engine: str = "ai"
     rate_limit_enabled: bool = True
+    google_client_id: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -71,6 +72,7 @@ class Settings:
             superadmin_email=os.environ.get("SUPERADMIN_EMAIL"),
             superadmin_password=os.environ.get("SUPERADMIN_PASSWORD"),
             superadmin_name=os.environ.get("SUPERADMIN_NAME", "Super Admin"),
+            google_client_id=os.environ.get("GOOGLE_CLIENT_ID") or None,
             cors_origin_regex=os.environ.get(
                 "BACKEND_CORS_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
             ),

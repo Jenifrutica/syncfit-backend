@@ -156,7 +156,13 @@ def capture(
     equipment = available_equipment_keys(session, profile) if profile is not None else None
     allowed_ids = available_exercise_ids(session, profile) if profile is not None else set()
     symptom_ids = list(profile.symptoms or []) if profile is not None else []
-    contraindicated = contraindicated_patterns(symptom_ids)
+    symptom_notes = profile.symptom_notes if profile is not None else None
+    extra_avoid = (
+        list(getattr(profile, "symptom_avoid_patterns", None) or [])
+        if profile is not None
+        else []
+    )
+    contraindicated = sorted(set(contraindicated_patterns(symptom_ids)) | set(extra_avoid))
 
     # Local model -> structured assessment consumed by the reasoning layer.
     assessment = {
@@ -195,6 +201,7 @@ def capture(
             assessment=assessment,
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
+            symptom_notes=symptom_notes,
         )
     except Exception:
         payload = generate_routine(
@@ -206,6 +213,7 @@ def capture(
             assessment=assessment,
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
+            symptom_notes=symptom_notes,
         )
     ordered = order_entries(
         payload["routine"], payload.get("phase_inferred") or core.phase_inferred.value, language

@@ -17,6 +17,8 @@ dependencies = [
     "argon2-cffi>=23.1",
     "slowapi>=0.1.9",
     "qrcode[pil]>=7.4",
+    "google-auth>=2.0",
+    "requests>=2.0",
     "syncfit-database @ git+https://github.com/Jenifrutica/syncfit-database.git",
     "syncfit-contracts @ git+https://github.com/Jenifrutica/syncfit-contracts.git#subdirectory=python",
     "syncfit-core @ git+https://github.com/Jenifrutica/syncfit-core.git",

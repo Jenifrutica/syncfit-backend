@@ -49,6 +49,7 @@ def generate_routine(
     assessment: dict[str, Any] | None = None,
     equipment_keys: Iterable[str] | None = None,
     available_exercise_ids: Iterable[str] | None = None,
+    symptom_notes: str | None = None,
 ) -> dict[str, Any]:
     """Generate a routine.
 
@@ -91,6 +92,7 @@ def generate_routine(
             assessment=assessment,
             equipment_keys=equipment,
             available_exercise_ids=allowed,
+            symptom_notes=symptom_notes,
         )
         payload = result.model_dump(mode="json")
         payload["engine_used"] = planner.last_engine

@@ -9,6 +9,7 @@ from syncfit_database import User
 from app.config import settings
 from app.db import get_database
 from app.main import app
+from app.services.auth import create_access_token, hash_password
 from app.services.credentials import client_digest
 from app.rate_limit import limiter
 from app.services.admin import ensure_superadmin
@@ -382,6 +383,82 @@ def test_delete_account_removes_user_and_data():
         assert s.query(User).filter_by(email="flow-delete@example.com").one_or_none() is None
     # The email is free again.
     _register("flow-delete@example.com")
+
+
+def test_delete_account_with_confirmation_phrase():
+    token = _register("flow-delete-phrase@example.com")  # display_name = "Ana"
+
+    wrong = client.request("DELETE", "/api/v1/account", json={"confirm": "eliminar Otra"}, headers=_auth(token))
+    assert wrong.status_code == 403
+    assert client.get("/api/v1/account", headers=_auth(token)).status_code == 200
+
+    missing = client.request("DELETE", "/api/v1/account", json={}, headers=_auth(token))
+    assert missing.status_code == 422
+
+    # Case and extra spaces do not matter.
+    deleted = client.request("DELETE", "/api/v1/account", json={"confirm": "  ELIMINAR   ana "}, headers=_auth(token))
+    assert deleted.status_code == 204, deleted.text
+    assert client.get("/api/v1/account", headers=_auth(token)).status_code == 401
+
+
+def test_google_like_account_can_delete_with_phrase():
+    _register("flow-google-delete@example.com")
+    with get_database().session_scope() as s:
+        user = s.query(User).filter_by(email="flow-google-delete@example.com").one()
+        # Google accounts store a random password nobody knows; changing it also
+        # revokes old tokens, so issue a fresh one for this session.
+        user.password_hash = hash_password("random-unusable-password")
+        s.flush()
+        token = create_access_token(user)
+    deleted = client.request("DELETE", "/api/v1/account", json={"confirm": "delete Ana"}, headers=_auth(token))
+    assert deleted.status_code == 204, deleted.text
+
+
+def test_google_access_token_sign_in(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "settings", SimpleNamespace(google_client_id="test-client"))
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {
+                "aud": "test-client",
+                "sub": "google-sub-1",
+                "email": "google-access@example.com",
+                "email_verified": "true",
+                "name": "Google Access",
+            }
+
+    monkeypatch.setattr(auth_module.requests, "get", lambda *args, **kwargs: Response())
+    response = client.post("/api/v1/auth/google", json={"access_token": "x" * 30})
+    assert response.status_code == 200, response.text
+    assert response.json()["user"]["email"] == "google-access@example.com"
+    with get_database().session_scope() as s:
+        user = s.query(User).filter_by(email="google-access@example.com").one_or_none()
+        if user is not None:
+            s.delete(user)
+
+
+def test_google_access_token_rejects_wrong_audience(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "settings", SimpleNamespace(google_client_id="test-client"))
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"aud": "another-client", "email": "x@example.com", "email_verified": "true"}
+
+    monkeypatch.setattr(auth_module.requests, "get", lambda *args, **kwargs: Response())
+    response = client.post("/api/v1/auth/google", json={"access_token": "x" * 30})
+    assert response.status_code == 401
 
 
 def test_delete_account_requires_authentication():

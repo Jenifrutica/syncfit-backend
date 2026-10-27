@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from syncfit_contracts import EnergyCheckIn, RoutineRequest, SupplementRequest, UserProfile
@@ -14,13 +14,15 @@ from syncfit_database import Routine, SupplementIntake, User
 from ..analytics.alert_heap import AlertHeap
 from ..config import settings
 from ..db import get_session
+from ..rate_limit import limiter
 from ..services import profiles
 from ..services.alerts import dispatch_alerts
 from ..services.auth import current_user, require_gym_admin, require_super_admin, verify_password
 from ..services import admin as admin_service
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
-from syncfit_contracts import load_symptoms, localize
+from syncfit_contracts import get_symptom, load_exercises, load_symptoms, localize, patterns_of
+from ..services.symptoms import contraindicated_patterns
 from ..services.biomarkers import biomarker_summary
 from ..services.calendar import build_calendar
 from ..services.cycles import compute_timeline
@@ -140,6 +142,78 @@ def symptoms(language: str = Query(default="EN")) -> list[dict[str, Any]]:
             "block_training": symptom.get("block_training", False),
         })
     return result
+
+
+@router.post("/symptoms/analyze")
+@limiter.limit("10/minute")
+def analyze_symptoms_text(
+    request: Request,
+    payload: dict[str, Any],
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Interpret free-text symptoms and return validated ids, patterns and advice."""
+    text = str(payload.get("text") or "").strip()
+    if not text or len(text) > 1000:
+        raise HTTPException(status_code=422, detail="text must be between 1 and 1000 characters")
+    language = str(payload.get("language") or "EN").upper()
+    if language not in ("EN", "ES", "ZH"):
+        language = "EN"
+    pain = None
+    if payload.get("pain_level") is not None:
+        try:
+            pain = max(0, min(10, int(payload["pain_level"])))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="pain_level must be an integer from 0 to 10") from exc
+
+    profile = profiles_db.get_profile(session, user)
+    modality = (profile.modality if profile is not None else None) or "MENSTRUAL_CYCLE"
+
+    try:
+        from syncfit_ai import interpret_symptom_text
+
+        analysis = interpret_symptom_text(
+            text, language=language, modality=modality, pain_level=pain
+        )
+    except Exception as exc:  # no key, provider down, invalid response...
+        raise HTTPException(status_code=503, detail="symptom analysis is unavailable") from exc
+
+    allowed_ids = {
+        symptom["id"]
+        for symptom in load_symptoms()
+        if str(symptom.get("modality", "ANY")) in ("ANY", modality)
+    }
+    allowed_patterns = {p for exercise in load_exercises() if (p := patterns_of(exercise))}
+    symptom_ids = [sid for sid in analysis.get("symptom_ids", []) if sid in allowed_ids]
+    extra_patterns = [p for p in analysis.get("avoid_patterns", []) if p in allowed_patterns]
+
+    matched = []
+    for symptom_id in symptom_ids:
+        symptom = get_symptom(symptom_id)
+        if symptom is None:
+            continue
+        matched.append(
+            {
+                "id": symptom_id,
+                "name": localize(symptom.get("name", {}), language),
+                "advice": localize(symptom.get("advice", {}), language),
+            }
+        )
+
+    avoid_patterns = sorted(set(contraindicated_patterns(symptom_ids)) | set(extra_patterns))
+    block_training = any(
+        bool((get_symptom(symptom_id) or {}).get("block_training")) for symptom_id in symptom_ids
+    )
+    severity = analysis.get("severity") if isinstance(analysis.get("severity"), dict) else {}
+    return {
+        "symptom_ids": symptom_ids,
+        "severity": {sid: int(severity.get(sid, 0)) for sid in symptom_ids},
+        "guidance": str(analysis.get("guidance") or "").strip()[:600],
+        "matched": matched,
+        "avoid_patterns": avoid_patterns,
+        "block_training": block_training,
+        "absolute_contraindication": bool(analysis.get("absolute_contraindication")),
+    }
 
 
 @router.get("/machines")
@@ -504,6 +578,7 @@ def _serialize_profile(profile) -> dict[str, Any]:
         "symptoms": list(profile.symptoms or []),
         "pain_levels": dict(profile.pain_levels or {}),
         "symptom_notes": profile.symptom_notes,
+        "symptom_avoid_patterns": list(profile.symptom_avoid_patterns or []),
         "current_supplements": list(profile.current_supplements or []),
         "supplement_macros": list(profile.supplement_macros or []),
         "weight_unit": profile.weight_unit or "KG",

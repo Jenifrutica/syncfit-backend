@@ -18,6 +18,10 @@
           "value": "https://syncfit.jenilarper.dev"
         },
         {
+          "name": "GOOGLE_CLIENT_ID",
+          "value": "39725097831-sjppkr1jkf7700l8arpcm49i28tp8upn.apps.googleusercontent.com"
+        },
+        {
           "name": "REASONING_PRODUCT",
           "value": "go"
         },

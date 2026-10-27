@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import secrets
+
+import requests
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 from syncfit_database import User
 
+from ..config import settings
 from ..db import get_session
 from ..rate_limit import limiter
 from ..services import admin as admin_service
@@ -47,9 +53,32 @@ class ChangePasswordIn(BaseModel):
 
 
 class DeleteAccountIn(BaseModel):
-    # The current password confirms the operation. No min_length, so older
+    # Two ways to confirm: the current password (accounts that have one) or the
+    # typed phrase "eliminar <display name>" (works for Google accounts, which
+    # never know their random password). No min_length on the password so older
     # accounts with shorter passwords can still delete themselves.
-    password: str = Field(max_length=128)
+    password: str | None = Field(default=None, max_length=128)
+    confirm: str | None = Field(default=None, max_length=200)
+
+
+class GoogleIn(BaseModel):
+    """Google credential from the browser: an ID token or an OAuth access token."""
+
+    credential: str | None = Field(default=None, min_length=20)
+    access_token: str | None = Field(default=None, min_length=20)
+
+
+_DELETE_VERBS = ("eliminar", "delete", "删除")
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _delete_phrase_matches(user: User, confirm: str) -> bool:
+    name = _normalize_text(user.display_name)
+    expected = {f"{verb} {name}" for verb in _DELETE_VERBS}
+    return _normalize_text(confirm) in expected
 
 
 def _public_user(user: User) -> dict:
@@ -115,6 +144,76 @@ def login(request: Request, payload: LoginIn, session: Session = Depends(get_ses
     }
 
 
+def _google_info_from_access_token(access_token: str, client_id: str) -> dict:
+    """Validate an OAuth access token with Google's tokeninfo endpoint."""
+    try:
+        response = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"access_token": access_token},
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail="google verification unavailable") from exc
+    if response.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid google token")
+    info = response.json()
+    if info.get("aud") != client_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid google token")
+    return info
+
+
+@router.post("/google")
+@limiter.limit("10/minute")
+def google_login(request: Request, payload: GoogleIn, session: Session = Depends(get_session)) -> dict:
+    """Sign in with a Google credential and link/create the account by email.
+
+    Accepts an ID token (`credential`, from the Google button) or an OAuth
+    access token (`access_token`, from a custom-styled button). Google accounts
+    never get a usable password: a random one is stored so password login cannot
+    be used until the person sets one.
+    """
+    client_id = settings.google_client_id
+    if not client_id:
+        raise HTTPException(status_code=503, detail="google sign-in is not configured")
+    if payload.credential:
+        try:
+            info = id_token.verify_oauth2_token(
+                payload.credential, google_requests.Request(), client_id
+            )
+        except Exception as exc:  # invalid signature, wrong audience, expired...
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid google token") from exc
+    elif payload.access_token:
+        info = _google_info_from_access_token(payload.access_token, client_id)
+    else:
+        raise HTTPException(status_code=422, detail="credential or access_token required")
+    if str(info.get("email_verified")).lower() not in {"true", "1"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="google email not verified")
+    email = str(info.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid google token")
+
+    user = session.query(User).filter_by(email=email).one_or_none()
+    if user is None:
+        display_name = str(info.get("name") or email.split("@")[0])[:120]
+        user = User(
+            email=email,
+            password_hash=hash_password(secrets.token_urlsafe(48)),
+            display_name=display_name,
+            role="ATHLETE",
+            token_version=0,
+        )
+        session.add(user)
+    if getattr(user, "active", True) is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account deactivated")
+    session.commit()
+    session.refresh(user)
+    return {
+        "access_token": create_access_token(user),
+        "token_type": "bearer",
+        "user": _public_user(user),
+    }
+
+
 @account_router.get("")
 def get_account(user: User = Depends(current_user)) -> dict:
     return _public_user(user)
@@ -150,11 +249,17 @@ def change_password(request: Request, payload: ChangePasswordIn, user: User = De
 @account_router.delete("", status_code=204)
 @limiter.limit("5/minute")
 def delete_account(request: Request, payload: DeleteAccountIn, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
-    if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
     if getattr(user, "role", None) == "SUPER_ADMIN":
         # The platform must always keep its super admin account.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="super admin cannot delete itself")
+    if payload.password:
+        if not verify_password(payload.password, user.password_hash):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    elif payload.confirm:
+        if not _delete_phrase_matches(user, payload.confirm):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="confirmation phrase does not match")
+    else:
+        raise HTTPException(status_code=422, detail="password or confirmation phrase required")
     admin_service.delete_user(session, user)
     session.commit()
     return Response(status_code=204)

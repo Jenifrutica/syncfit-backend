@@ -74,7 +74,7 @@ without data loss. Production must use Alembic.
 | GET | `/api/v1/account` | auth | — | `user` |
 | PUT | `/api/v1/auth/password` | auth | `{current_password, new_password}` | `{access_token, token_type, user}` (old tokens are revoked) |
 | POST | `/api/v1/auth/logout` | auth | — | `204` (revokes every token of the user, on all devices) |
-| DELETE | `/api/v1/account` | auth | `{password}` | `204` (deletes the account and all its data; super admin gets `403`) |
+| DELETE | `/api/v1/account` | auth | `{password}` or `{confirm: "<eliminar\|delete\|删除> <display_name>"}` | `204` (deletes the account and all its data; super admin gets `403`). The phrase also works for Google accounts, which have no usable password. |
 
 `user = {id, email, display_name, document_id, role, active}`.
 `document_id` (cedula) is **required at registration** (6–15 digits, unique).
@@ -113,6 +113,7 @@ localStorage.setItem("syncfit_token", access_token);
 | GET | `/machines?language=` | auth | Localized catalog machines. |
 | GET | `/exercises/{id}/alternatives?language=` | auth | Ordered replacement options (Change button). |
 | GET | `/exercises/{id}/variants` | public | Movement-family variants. |
+| POST | `/symptoms/analyze` | auth | `{text, language, pain_level?}` → AI interpretation. Returns `{symptom_ids, severity, guidance, matched, avoid_patterns, block_training, absolute_contraindication}`. Ids and patterns are validated against the catalog and the athlete's modality; the raw text is also forwarded to the routine model. |
 
 ### Profiles / cycle / calendar
 | Method | Path | Access | Purpose |
@@ -203,7 +204,8 @@ sets, description, how_to, tips, machine_id, machine_name, movement_pattern, rat
 
 1. **Register** (athlete): `POST /auth/register` with `document_id`.
 2. **Onboarding**: `PUT /profile` (modality, cycle/gestation, body comp, goal,
-   machines, symptoms, `weekly_training_goal`, `rest_days_allowance`).
+   machines, symptoms, `symptom_notes` + `symptom_avoid_patterns` from
+   `POST /symptoms/analyze`, `weekly_training_goal`, `rest_days_allowance`).
 3. **Join gym**: `POST /gyms/join {code}` → `GET /gyms/joined` shows equipment.
 4. **Capture**: `POST /capture?muscle_groups=GLUTES&exercises_count=5` →
    routine using gym equipment first, with per-exercise `movement_pattern`,
