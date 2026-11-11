@@ -63,6 +63,24 @@ def _annotate_machines(entries: list[dict], station_map: dict[str, dict]) -> lis
     return annotated
 
 
+def _with_catalog_flags(entries: list[dict]) -> list[dict]:
+    """Fill `compound` / `movement_pattern` from the catalog before ordering.
+
+    Generators and symptom substitutions do not always carry those flags; the
+    sequencing rules (compound -> unilateral -> accessory) need them.
+    """
+    for entry in entries:
+        exercise_id = entry.get("exercise_id")
+        exercise = get_exercise(exercise_id) if exercise_id else None
+        if exercise is None:
+            continue
+        if not entry.get("movement_pattern"):
+            entry["movement_pattern"] = patterns_of(exercise)
+        if entry.get("compound") is None:
+            entry["compound"] = bool(getattr(exercise, "compound", False))
+    return entries
+
+
 def _scenario_for(modality: str, phase: str | None) -> str:
     if modality == "GESTATIONAL":
         return "gestational_t2"
@@ -215,9 +233,8 @@ def capture(
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
         )
-    ordered = order_entries(
-        payload["routine"], payload.get("phase_inferred") or core.phase_inferred.value, language
-    )
+    phase_name = payload.get("phase_inferred") or core.phase_inferred.value
+    ordered = order_entries(_with_catalog_flags(payload["routine"]), phase_name, language)
     warmup = payload.get("warmup", [])
 
     # Apply declared symptoms (stop if an absolute contraindication is present).
@@ -231,6 +248,9 @@ def capture(
     if block_training:
         ordered = []
         warmup = []
+    else:
+        # Substitutions can change the movement pattern: keep the sequence valid.
+        ordered = order_entries(_with_catalog_flags(ordered), phase_name, language)
 
     # Tag exercises handled by one of the athlete's gym machines (id, name, photo).
     ordered = _annotate_machines(ordered, station_map)
