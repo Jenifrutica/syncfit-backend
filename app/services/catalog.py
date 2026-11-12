@@ -4,11 +4,28 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy.orm import Session
 from syncfit_contracts import MuscleGroup, load_exercises, localize
+from syncfit_database import AppOption
+
+from .options import GENERAL, ISOLATED
 
 
-def list_muscle_groups() -> list[str]:
-    return [group.value for group in MuscleGroup]
+def list_muscle_groups(session: Session | None = None) -> list[str]:
+    """Active muscle groups, from the database when a session is available."""
+    if session is None:
+        return [group.value for group in MuscleGroup]
+    rows = (
+        session.query(AppOption.value)
+        .filter(
+            AppOption.active.is_(True),
+            AppOption.category.in_((ISOLATED, GENERAL)),
+        )
+        .order_by(AppOption.sort_order, AppOption.value)
+        .all()
+    )
+    values = [value for (value,) in rows]
+    return values or [group.value for group in MuscleGroup]
 
 
 def get_catalog(language: str = "EN") -> list[dict[str, Any]]:

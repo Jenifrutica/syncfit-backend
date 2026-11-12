@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from syncfit_contracts import EnergyCheckIn, RoutineRequest, SupplementRequest, UserProfile
-from syncfit_database import Routine, SupplementIntake, User
+from syncfit_database import AppOption, Routine, SupplementIntake, User
 
 from ..analytics.alert_heap import AlertHeap
 from ..config import settings
@@ -21,6 +21,7 @@ from ..services.auth import current_user, require_gym_admin, require_super_admin
 from ..services import admin as admin_service
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
+from ..services.catalog_db import KINDS, list_items, load_registry, set_active, upsert
 from syncfit_contracts import get_symptom, load_exercises, load_symptoms, localize, patterns_of
 from ..services.symptoms import contraindicated_patterns
 from ..services.biomarkers import biomarker_summary
@@ -48,6 +49,20 @@ from ..services import profiles_db
 from ..services.validation import validate_document_id, validate_gym_name, validate_person_name
 
 router = APIRouter()
+
+
+def _ensure_known_groups(groups: Any, session: Session) -> None:
+    """Reject muscle groups that are not active options (422, not a crash)."""
+    if not groups:
+        return
+    values = [str(group) for group in groups]
+    allowed = set(list_muscle_groups(session))
+    unknown = [value for value in values if value not in allowed]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown muscle groups: {', '.join(unknown)}",
+        )
 
 
 @router.get("/health")
@@ -79,8 +94,8 @@ def options(language: str = Query(default="EN"), session: Session = Depends(get_
 
 
 @router.get("/muscle-groups")
-def muscle_groups() -> list[str]:
-    return list_muscle_groups()
+def muscle_groups(session: Session = Depends(get_session)) -> list[str]:
+    return list_muscle_groups(session)
 
 
 @router.get("/catalog")
@@ -103,7 +118,9 @@ def create_routine(
     payload: dict[str, Any],
     engine: str = Query(default="simulator", pattern="^(simulator|ai)$"),
     profile_id: str | None = Query(default=None),
+    session: Session = Depends(get_session),
 ) -> dict[str, Any]:
+    _ensure_known_groups(payload.get("muscle_groups"), session)
     try:
         request = RoutineRequest.model_validate(payload)
     except Exception as exc:
@@ -403,6 +420,7 @@ def take_data(
 ) -> dict[str, Any]:
     profile = profiles_db.get_profile(session, user)
     groups = [g.strip() for g in muscle_groups.split(",")] if muscle_groups else None
+    _ensure_known_groups(groups, session)
     result = capture(
         session,
         user,
@@ -990,6 +1008,138 @@ def admin_delete_user(user_id: str, payload: dict[str, Any], user: User = Depend
     admin_service.delete_user(session, target)
     session.commit()
     return Response(status_code=204)
+
+
+# --- Catalog administration -------------------------------------------------
+# The database is the source of truth: every write refreshes the in-memory
+# registry so the reasoning engine and the public endpoints see it immediately.
+
+_OPTION_CATEGORIES = {"muscle_group_isolated", "muscle_group_general", "objective", "goal_phase"}
+
+
+def _option_json(row: AppOption) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "category": row.category,
+        "value": row.value,
+        "labels": row.labels or {},
+        "sort_order": row.sort_order,
+        "active": row.active,
+    }
+
+
+def _catalog_json(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.external_id,
+        "kind": row.kind,
+        "active": row.active,
+        "sort_order": row.sort_order,
+        "payload": row.payload,
+    }
+
+
+@router.get("/admin/options")
+def admin_list_options(user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    rows = session.query(AppOption).order_by(AppOption.category, AppOption.sort_order, AppOption.value).all()
+    return [_option_json(row) for row in rows]
+
+
+@router.post("/admin/options")
+def admin_save_option(payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    category = str(payload.get("category") or "").strip()
+    if category not in _OPTION_CATEGORIES:
+        raise HTTPException(status_code=422, detail=f"category must be one of {sorted(_OPTION_CATEGORIES)}")
+    value = str(payload.get("value") or "").strip().upper().replace(" ", "_")
+    if not value or len(value) > 60 or not all(ch.isalnum() or ch == "_" for ch in value):
+        raise HTTPException(status_code=422, detail="value must be letters, digits or underscores")
+    labels = payload.get("labels")
+    if not isinstance(labels, dict) or not labels.get("en"):
+        raise HTTPException(status_code=422, detail="labels must be an object with at least 'en'")
+    row = session.query(AppOption).filter_by(category=category, value=value).one_or_none()
+    if row is None:
+        row = AppOption(category=category, value=value)
+        session.add(row)
+    row.labels = {str(k).lower(): str(v) for k, v in labels.items()}
+    if payload.get("sort_order") is not None:
+        row.sort_order = int(payload["sort_order"])
+    row.active = bool(payload.get("active", True))
+    session.commit()
+    session.refresh(row)
+    return _option_json(row)
+
+
+@router.patch("/admin/options/{option_id}")
+def admin_update_option(option_id: str, payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    row = session.get(AppOption, option_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="option not found")
+    if "labels" in payload:
+        labels = payload["labels"]
+        if not isinstance(labels, dict) or not labels.get("en"):
+            raise HTTPException(status_code=422, detail="labels must be an object with at least 'en'")
+        row.labels = {str(k).lower(): str(v) for k, v in labels.items()}
+    if payload.get("sort_order") is not None:
+        row.sort_order = int(payload["sort_order"])
+    if payload.get("active") is not None:
+        row.active = bool(payload["active"])
+    session.commit()
+    session.refresh(row)
+    return _option_json(row)
+
+
+@router.delete("/admin/options/{option_id}")
+def admin_deactivate_option(option_id: str, user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
+    row = session.get(AppOption, option_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="option not found")
+    row.active = False
+    session.commit()
+    session.refresh(row)
+    return _option_json(row)
+
+
+@router.get("/admin/catalog/{kind}")
+def admin_list_catalog(kind: str, user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    if kind not in KINDS:
+        raise HTTPException(status_code=404, detail=f"kind must be one of {list(KINDS)}")
+    return [_catalog_json(row) for row in list_items(session, kind)]
+
+
+@router.post("/admin/catalog/{kind}")
+def admin_save_catalog_item(
+    kind: str,
+    payload: dict[str, Any],
+    sort_order: int | None = Query(default=None),
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    if kind not in KINDS:
+        raise HTTPException(status_code=404, detail=f"kind must be one of {list(KINDS)}")
+    try:
+        row = upsert(session, kind, payload, sort_order=sort_order)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    session.commit()
+    load_registry(session)
+    return _catalog_json(row)
+
+
+@router.patch("/admin/catalog/{kind}/{external_id}")
+def admin_catalog_active(
+    kind: str,
+    external_id: str,
+    payload: dict[str, Any],
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    if kind not in KINDS:
+        raise HTTPException(status_code=404, detail=f"kind must be one of {list(KINDS)}")
+    row = set_active(session, kind, external_id, bool(payload.get("active", True)))
+    if row is None:
+        raise HTTPException(status_code=404, detail="catalog item not found")
+    session.commit()
+    load_registry(session)
+    return _catalog_json(row)
 
 
 __all__ = ["router"]

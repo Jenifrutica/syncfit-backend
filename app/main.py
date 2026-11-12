@@ -42,13 +42,16 @@ def create_app() -> FastAPI:
     def _startup() -> None:
         from .db import get_database
         from .services.admin import ensure_superadmin
+        from .services.catalog_db import ensure_catalog, load_registry
         from .services.options import ensure_default_options
 
         session = get_database().session()
         try:
             ensure_superadmin(session)
             ensure_default_options(session)
+            ensure_catalog(session)
             session.commit()
+            load_registry(session)
         finally:
             session.close()
 
