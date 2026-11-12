@@ -32,7 +32,8 @@ from .live import latest as latest_live
 from .loads import adjust_entries
 from .machines import factor_for_exercise
 from .ordering import order_entries
-from .symptoms import apply_symptoms, contraindicated_patterns
+from .symptom_policy import build_symptom_context, fallback_patterns, hard_patterns
+from .symptoms import apply_symptoms
 from .routines import generate_routine
 
 DEFAULT_GROUPS = ["LOWER_BODY", "UPPER_BODY", "CORE"]
@@ -192,7 +193,19 @@ def capture(
         if profile is not None
         else []
     )
-    contraindicated = sorted(set(contraindicated_patterns(symptom_ids)) | set(extra_avoid))
+    symptom_context = build_symptom_context(
+        symptom_ids=symptom_ids,
+        pain_levels=profile.pain_levels if profile is not None else None,
+        notes=symptom_notes,
+        extra_avoid=extra_avoid,
+        language=language,
+    )
+    # The model decides how to adapt the routine to the pain. Only absolute red
+    # flags are hard blocks; the pattern policy below is for the fallback when
+    # the model is unavailable.
+    contraindicated = list(hard_patterns(symptom_context))
+    fallback_blocked = list(fallback_patterns(symptom_context))
+    context_payload = symptom_context.prompt_payload()
 
     # Local model -> structured assessment consumed by the reasoning layer.
     assessment = {
@@ -203,6 +216,7 @@ def capture(
         "autonomic_status": _autonomic_status(core.rmssd_hrv_ms, core.fatigue_level.value),
         "articular_risk_pct": _articular_risk(core),
         "contraindicated_patterns": contraindicated,
+        "symptom_context": context_payload,
         "notes": [],
         "source": "core",
     }
@@ -230,6 +244,7 @@ def capture(
             contraindicated_patterns=contraindicated,
             gym_machines=gym_machines,
             assessment=assessment,
+            symptom_context=context_payload,
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
@@ -239,9 +254,10 @@ def capture(
             request,
             engine="deterministic",
             preferred_exercise_ids=list(preferred),
-            contraindicated_patterns=contraindicated,
+            contraindicated_patterns=fallback_blocked,
             gym_machines=gym_machines,
             assessment=assessment,
+            symptom_context=context_payload,
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
@@ -348,12 +364,16 @@ def capture(
         entry.get("exercise_id"): list(entry.get("muscle_groups") or []) for entry in ordered
     }
 
-    alerts = list(symptom_alerts) + [str(a) for a in payload.get("alerts") or [] if a]
+    alerts = (
+        list(symptom_context.advice)
+        + list(symptom_alerts)
+        + [str(a) for a in payload.get("alerts") or [] if a]
+    )
     empty_reason = None
     if not ordered:
         if block_training:
             empty_reason = "TRAINING_BLOCKED"
-        elif contraindicated:
+        elif symptom_context.ids:
             empty_reason = "SYMPTOMS_BLOCK_ALL"
         else:
             empty_reason = "NO_EXERCISES"
