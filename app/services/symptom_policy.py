@@ -29,10 +29,18 @@ _SEVERITY_RULES: dict[str, tuple[tuple[int, tuple[str, ...]], ...]] = {
     ),
 }
 
+# Safety impact cap (not a pattern decision): the model still chooses the
+# exercises, but it cannot program above what the pain allows.
+_IMPACT_CAP: dict[str, tuple[tuple[int, str], ...]] = {
+    "knee_pain": ((3, "MEDIUM"), (10, "LOW")),
+    "low_back_pain": ((3, "MEDIUM"), (10, "LOW")),
+}
+_IMPACT_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+
 _SEVERITY_NOTE = {
-    "ES": "Dolor {name} {level}/10: adapta carga y rango a lo que no duela.",
-    "EN": "{name} pain {level}/10: adapt load and range to what stays pain-free.",
-    "ZH": "{name} 疼痛 {level}/10：请根据无痛范围调整负荷和幅度。",
+    "ES": "{name}: {level}/10. Adapta carga y rango a lo que no duela.",
+    "EN": "{name}: {level}/10. Adapt load and range to what stays pain-free.",
+    "ZH": "{name}：{level}/10。请根据无痛范围调整负荷和幅度。",
 }
 
 
@@ -48,6 +56,7 @@ class SymptomContext:
     suggested_patterns: tuple[str, ...]
     advice: tuple[str, ...]
     guidance: dict[str, str]
+    impact_cap: str
 
     def level_for(self, symptom_id: str) -> int:
         return int(self.severities.get(symptom_id, self.overall) or 0)
@@ -66,6 +75,7 @@ class SymptomContext:
             ],
             "notes": self.notes,
             "advice": list(self.advice),
+            "impact_cap": self.impact_cap,
         }
 
 
@@ -97,6 +107,7 @@ def build_symptom_context(
     suggested: set[str] = set()
     advice: list[str] = []
     symptom_guidance: dict[str, str] = {}
+    impact_cap = "HIGH"
     code = language.lower()
 
     suggested |= {str(pattern) for pattern in (extra_avoid or [])}
@@ -109,6 +120,11 @@ def build_symptom_context(
         if symptom.get("block_training"):
             stop = True
         suggested |= _severity_patterns(symptom_id, level)
+        for maximum, cap in _IMPACT_CAP.get(symptom_id, ()):
+            if level >= 1 and level <= maximum:
+                if _IMPACT_RANK[cap] < _IMPACT_RANK[impact_cap]:
+                    impact_cap = cap
+                break
         if level > 0:
             name = localize(symptom.get("name", {}), language)
             template = _SEVERITY_NOTE.get(language.upper(), _SEVERITY_NOTE["EN"])
@@ -126,6 +142,7 @@ def build_symptom_context(
         suggested_patterns=tuple(sorted(suggested)),
         advice=tuple(advice),
         guidance={symptom_id: text for symptom_id, text in symptom_guidance.items() if text},
+        impact_cap=impact_cap,
     )
 
 

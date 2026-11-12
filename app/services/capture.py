@@ -245,6 +245,7 @@ def capture(
             gym_machines=gym_machines,
             assessment=assessment,
             symptom_context=context_payload,
+            impact_cap=symptom_context.impact_cap,
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
@@ -258,6 +259,7 @@ def capture(
             gym_machines=gym_machines,
             assessment=assessment,
             symptom_context=context_payload,
+            impact_cap=symptom_context.impact_cap,
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
@@ -271,9 +273,6 @@ def capture(
     warmup, _, _ = apply_symptoms(warmup, symptom_ids, language)
     if profile is not None and profile.symptom_notes:
         symptom_alerts.append(f"{_label(language, 'notes')}: {profile.symptom_notes}")
-    if profile is not None and profile.pain_levels:
-        for sid, level in profile.pain_levels.items():
-            symptom_alerts.append(f"{_label(language, 'pain')} {sid}: {level}/10")
     if block_training:
         ordered = []
         warmup = []
@@ -364,11 +363,15 @@ def capture(
         entry.get("exercise_id"): list(entry.get("muscle_groups") or []) for entry in ordered
     }
 
-    alerts = (
-        list(symptom_context.advice)
-        + list(symptom_alerts)
-        + [str(a) for a in payload.get("alerts") or [] if a]
-    )
+    alerts = list(symptom_context.advice) + list(symptom_alerts)
+    if ordered:
+        alerts.append(
+            {
+                "ES": f"Rutina con {len(ordered)} ejercicios; no se repite ningún patrón de movimiento.",
+                "EN": f"Routine with {len(ordered)} exercises; no movement pattern is repeated.",
+                "ZH": f"共 {len(ordered)} 个动作，同一运动模式不重复。",
+            }.get(language.upper(), f"Routine with {len(ordered)} exercises.")
+        )
     empty_reason = None
     if not ordered:
         if block_training:

@@ -48,6 +48,7 @@ def generate_routine(
     gym_machines: list[dict[str, Any]] | None = None,
     assessment: dict[str, Any] | None = None,
     symptom_context: dict[str, Any] | None = None,
+    impact_cap: str | None = None,
     equipment_keys: Iterable[str] | None = None,
     available_exercise_ids: Iterable[str] | None = None,
     symptom_notes: str | None = None,
@@ -92,6 +93,7 @@ def generate_routine(
             gym_machines=gym_machines,
             assessment=assessment,
             symptom_context=symptom_context,
+            impact_cap=impact_cap,
             equipment_keys=equipment,
             available_exercise_ids=allowed,
             symptom_notes=symptom_notes,
@@ -113,6 +115,7 @@ def generate_routine(
                 preferred_exercise_ids=preferred,
                 equipment_keys=equipment,
                 available_exercise_ids=allowed,
+                impact_cap=impact_cap,
             )
             if loads:
                 payload["warmup"] = adjust_entries(
