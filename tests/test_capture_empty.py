@@ -3,6 +3,7 @@ import zlib
 from fastapi.testclient import TestClient
 
 from app.main import app
+from syncfit_ai.routine import _family
 from syncfit_contracts import get_exercise
 
 client = TestClient(app)
@@ -53,8 +54,8 @@ def test_capture_without_symptoms_is_not_empty():
 
     assert body["empty_reason"] is None
     assert body["routine"], "routine must not be empty"
-    patterns = [entry.get("movement_pattern") for entry in body["routine"]]
-    assert len(patterns) == len(set(patterns)), patterns
+    families = [_family(get_exercise(entry["exercise_id"])) for entry in body["routine"]]
+    assert len(families) == len(set(families)), families
     for entry in body["routine"]:
         assert "QUADRICEPS" in entry.get("muscle_groups", [])
 
@@ -70,8 +71,8 @@ def test_mild_knee_pain_keeps_training_quads():
 
     assert body["empty_reason"] is None
     assert body["routine"], "mild pain must keep training"
-    patterns = [entry.get("movement_pattern") for entry in body["routine"]]
-    assert len(patterns) == len(set(patterns)), patterns
+    families = [_family(get_exercise(entry["exercise_id"])) for entry in body["routine"]]
+    assert len(families) == len(set(families)), families
     for entry in body["routine"]:
         assert "QUADRICEPS" in entry.get("muscle_groups", [])
         exercise = get_exercise(entry.get("exercise_id"))

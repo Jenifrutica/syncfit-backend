@@ -367,9 +367,9 @@ def capture(
     if ordered:
         alerts.append(
             {
-                "ES": f"Rutina con {len(ordered)} ejercicios; no se repite ningún patrón de movimiento.",
-                "EN": f"Routine with {len(ordered)} exercises; no movement pattern is repeated.",
-                "ZH": f"共 {len(ordered)} 个动作，同一运动模式不重复。",
+                "ES": f"Rutina con {len(ordered)} ejercicios; no se repite el mismo tipo de ejercicio.",
+                "EN": f"Routine with {len(ordered)} exercises; no exercise type is repeated.",
+                "ZH": f"共 {len(ordered)} 个动作，同类动作不重复。",
             }.get(language.upper(), f"Routine with {len(ordered)} exercises.")
         )
     empty_reason = None
