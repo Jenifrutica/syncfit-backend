@@ -1,0 +1,50 @@
+import zlib
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+
+def _register(email: str, symptoms: list[str] | None = None) -> dict:
+    document_id = f"{zlib.crc32(email.encode()) % 10**10:010d}"
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "secret123", "display_name": "Ana", "document_id": document_id},
+    )
+    assert response.status_code == 201, response.text
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    profile = {"modality": "MENSTRUAL_CYCLE"}
+    if symptoms:
+        profile["symptoms"] = symptoms
+    assert client.put("/api/v1/profile", json=profile, headers=headers).status_code == 200
+    return headers
+
+
+def test_capture_explains_an_empty_routine():
+    # Knee pain blocks every quad pattern (squat, lunge, leg extension).
+    headers = _register("empty-knee@example.com", symptoms=["knee_pain"])
+
+    captured = client.post("/api/v1/capture?muscle_groups=QUADRICEPS&exercises_count=5", headers=headers)
+    assert captured.status_code == 200, captured.text
+    body = captured.json()
+
+    assert body["routine"] == []
+    assert body["empty_reason"] == "SYMPTOMS_BLOCK_ALL"
+    assert body["alerts"], "the reason must reach the app"
+    # The warm-up block is still there, but the main routine is empty.
+    assert isinstance(body["warmup"], list)
+
+
+def test_capture_without_symptoms_is_not_empty():
+    headers = _register("empty-free@example.com")
+
+    captured = client.post("/api/v1/capture?muscle_groups=QUADRICEPS&exercises_count=5", headers=headers)
+    assert captured.status_code == 200, captured.text
+    body = captured.json()
+
+    assert body["empty_reason"] is None
+    assert len(body["routine"]) == 5
+    for entry in body["routine"]:
+        assert "QUADRICEPS" in entry.get("muscle_groups", [])

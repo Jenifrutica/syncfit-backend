@@ -208,6 +208,7 @@ def capture(
     }
 
     request = RoutineRequest(
+        session_id=str(uuid.uuid4()),
         muscle_groups=groups,
         language=language,
         modality=modality,
@@ -347,6 +348,23 @@ def capture(
         entry.get("exercise_id"): list(entry.get("muscle_groups") or []) for entry in ordered
     }
 
+    alerts = list(symptom_alerts) + [str(a) for a in payload.get("alerts") or [] if a]
+    empty_reason = None
+    if not ordered:
+        if block_training:
+            empty_reason = "TRAINING_BLOCKED"
+        elif contraindicated:
+            empty_reason = "SYMPTOMS_BLOCK_ALL"
+        else:
+            empty_reason = "NO_EXERCISES"
+        alerts.append(
+            {
+                "ES": "No quedaron ejercicios seguros para este grupo. Revisa tus síntomas o elige otra zona.",
+                "EN": "No safe exercises left for this group. Check your symptoms or pick another area.",
+                "ZH": "该部位没有安全的动作。请检查症状或选择其他部位。",
+            }.get(language.upper(), "No safe exercises left for this group.")
+        )
+
     return {
         "session_id": record.id,
         "routine_id": routine.id,
@@ -361,7 +379,8 @@ def capture(
         "biomarkers": dict(frame["biomarkers"]),
         "timeline": timeline,
         "total_estimated_minutes": payload.get("total_estimated_minutes"),
-        "alerts": symptom_alerts,
+        "alerts": alerts,
+        "empty_reason": empty_reason,
         "warmup": warmup,
         "routine": [
             {
