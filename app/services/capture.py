@@ -343,6 +343,10 @@ def capture(
     session.add(routine)
     session.flush()
 
+    groups_by_id = {
+        entry.get("exercise_id"): list(entry.get("muscle_groups") or []) for entry in ordered
+    }
+
     return {
         "session_id": record.id,
         "routine_id": routine.id,
@@ -383,6 +387,7 @@ def capture(
                 "machine_id": item.machine_id,
                 "machine_name": item.machine_name,
                 "movement_pattern": item.movement_pattern,
+                "muscle_groups": groups_by_id.get(item.exercise_id, []),
                 "rationale": item.rationale,
             }
             for item in routine.items
