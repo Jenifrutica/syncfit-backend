@@ -8,6 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..analytics.ring_buffer import TelemetryRingBuffer
 from ..services.engine import evaluate_frame
+from ..services.live import record
 
 router = APIRouter()
 
@@ -25,6 +26,7 @@ async def telemetry_socket(websocket: WebSocket) -> None:
             try:
                 decision = evaluate_frame(frame)
                 buffer.extend(frame["ppg_window"]["samples"])
+                record(frame, decision)
                 decision["buffer"] = {
                     "samples": len(buffer),
                     "seconds": buffer.seconds_buffered(),

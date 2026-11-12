@@ -28,6 +28,7 @@ from ..config import settings
 from .cycles import compute_timeline
 from .engine import engine_result
 from .gyms import available_equipment_keys, available_exercise_ids, station_index
+from .live import latest as latest_live
 from .loads import adjust_entries
 from .machines import factor_for_exercise
 from .ordering import order_entries
@@ -126,6 +127,7 @@ def capture(
     time_budget_minutes: int | None = None,
     energy_level: str | None = None,
     include_warmup: bool = True,
+    use_live: bool = True,
 ) -> dict:
     """Run the simulated capture and persist session, telemetry and routine."""
     timeline = compute_timeline(profile) if profile is not None else None
@@ -135,14 +137,24 @@ def capture(
     if timeline:
         day_or_week = timeline.get("cycle_day") or timeline.get("week")
 
-    scenario_name = scenario or _scenario_for(modality, phase)
-    scenario_obj = get_scenario(scenario_name)
-    frame = generate_frame(
-        scenario_obj,
-        session_id=str(uuid.uuid4()),
-        device_id="simulated-device",
-        window_size=256,
-    )
+    live = latest_live() if use_live and scenario is None else None
+    if live is not None:
+        # Real device: keep its biomarkers and PPG window, but the cycle data
+        # comes from the athlete's profile so the phase inference matches.
+        scenario_name = "device"
+        frame = dict(live.frame)
+        frame["modality"] = modality
+        if day_or_week is not None:
+            frame["day_or_week"] = day_or_week
+    else:
+        scenario_name = scenario or _scenario_for(modality, phase)
+        scenario_obj = get_scenario(scenario_name)
+        frame = generate_frame(
+            scenario_obj,
+            session_id=str(uuid.uuid4()),
+            device_id="simulated-device",
+            window_size=256,
+        )
     core = engine_result(frame)
     groups = muscle_groups or DEFAULT_GROUPS
     energy = energy_level or _latest_energy(session, user.id)
@@ -335,6 +347,7 @@ def capture(
         "session_id": record.id,
         "routine_id": routine.id,
         "scenario": scenario_name,
+        "capture_source": "device" if live is not None else "simulated",
         "phase_inferred": core.phase_inferred.value,
         "fatigue_level": core.fatigue_level.value,
         "k_load": core.k_load,

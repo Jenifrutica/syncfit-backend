@@ -18,3 +18,16 @@ os.environ["BACKEND_RATE_LIMIT_ENABLED"] = "false"
 # stay fast and deterministic (no network) whether or not syncfit-ai is installed.
 os.environ["REASONING_API_KEY"] = ""
 os.environ["OPENCODE_API_KEY"] = ""
+
+
+import pytest  # noqa: E402
+
+from app.services import live  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _clear_live_frame():
+    """A live frame must not leak between tests."""
+    live.clear()
+    yield
+    live.clear()

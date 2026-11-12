@@ -27,6 +27,7 @@ from ..services.biomarkers import biomarker_summary
 from ..services.calendar import build_calendar
 from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
+from ..services.live import latest as latest_live
 from ..services.machines import list_machines
 from ..services.options import list_options
 from ..services.routines import generate_routine
@@ -52,6 +53,23 @@ router = APIRouter()
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": settings.version}
+
+
+@router.get("/live")
+def live_status(max_age_seconds: float = Query(default=15.0, ge=1, le=600)) -> dict[str, Any]:
+    """Last telemetry frame from the prototype, for the capture screen.
+
+    Public on purpose: the device WebSocket is unauthenticated too, and the
+    payload only contains the device's own biomarkers.
+    """
+    reading = latest_live(max_age_seconds=max_age_seconds)
+    return {
+        "connected": reading is not None,
+        "age_seconds": None if reading is None else round(reading.age_seconds, 1),
+        "device_id": None if reading is None else reading.frame.get("device_id"),
+        "frame": None if reading is None else reading.frame,
+        "decision": None if reading is None else reading.decision,
+    }
 
 
 @router.get("/options")
@@ -379,6 +397,7 @@ def take_data(
     time_budget_minutes: int | None = Query(default=None),
     energy_level: str | None = Query(default=None),
     include_warmup: bool = Query(default=True),
+    use_live: bool = Query(default=True),
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -395,6 +414,7 @@ def take_data(
         time_budget_minutes=time_budget_minutes,
         energy_level=energy_level,
         include_warmup=include_warmup,
+        use_live=use_live,
     )
     session.commit()
     return result
