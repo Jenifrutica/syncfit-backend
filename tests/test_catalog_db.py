@@ -113,6 +113,8 @@ def test_admin_adds_muscle_and_exercise_then_capture_uses_them(client: TestClien
 
         captured = client.post("/api/v1/capture?muscle_groups=NECK&exercises_count=1", headers=headers)
         assert captured.status_code == 200, captured.text
+        routine = captured.json().get("routine", [])
+        assert any(item.get("exercise_id") == "test-neck-curl" for item in routine), routine
 
         off = client.patch("/api/v1/admin/catalog/exercise/test-neck-curl", json={"active": False}, headers=root)
         assert off.status_code == 200, off.text
