@@ -1124,6 +1124,24 @@ def admin_save_catalog_item(
     return _catalog_json(row)
 
 
+@router.delete("/admin/catalog/{kind}/{external_id}")
+def admin_delete_catalog_item(
+    kind: str,
+    external_id: str,
+    user: User = Depends(require_super_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Soft delete: the row is deactivated so past routines keep resolving it."""
+    if kind not in KINDS:
+        raise HTTPException(status_code=404, detail=f"kind must be one of {list(KINDS)}")
+    row = set_active(session, kind, external_id, False)
+    if row is None:
+        raise HTTPException(status_code=404, detail="catalog item not found")
+    session.commit()
+    load_registry(session)
+    return _catalog_json(row)
+
+
 @router.patch("/admin/catalog/{kind}/{external_id}")
 def admin_catalog_active(
     kind: str,

@@ -43,6 +43,23 @@ class Settings:
     routine_engine: str = "ai"
     rate_limit_enabled: bool = True
     google_client_id: str | None = None
+    # Public app URL used in emails (the reset link has to point at the frontend).
+    app_base_url: str = "http://localhost:3000"
+    password_reset_minutes: int = 30
+    # AWS SES SMTP. Without a host/user/password the endpoint reports the mail
+    # service as unavailable instead of silently dropping the message.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    demo_login_enabled: bool = False
+    demo_superadmin_email: str | None = None
+    demo_admin_email: str | None = None
+    demo_admin_name: str = "Demo Admin"
+    demo_admin_gym_name: str = "Valhalla"
+    demo_athlete_name: str = "Nicolasa"
+    demo_athlete_email: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -73,6 +90,20 @@ class Settings:
             superadmin_password=os.environ.get("SUPERADMIN_PASSWORD"),
             superadmin_name=os.environ.get("SUPERADMIN_NAME", "Super Admin"),
             google_client_id=os.environ.get("GOOGLE_CLIENT_ID") or None,
+            app_base_url=os.environ.get("APP_BASE_URL", "http://localhost:3000").rstrip("/"),
+            password_reset_minutes=int(os.environ.get("PASSWORD_RESET_MINUTES", "30")),
+            smtp_host=os.environ.get("SMTP_HOST") or None,
+            smtp_port=int(os.environ.get("SMTP_PORT", "587")),
+            smtp_user=os.environ.get("SMTP_USER") or None,
+            smtp_password=os.environ.get("SMTP_PASSWORD") or os.environ.get("SMTP_PASS") or None,
+            smtp_from=os.environ.get("SMTP_FROM") or None,
+            demo_login_enabled=os.environ.get("DEMO_LOGIN_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+            demo_superadmin_email=os.environ.get("DEMO_SUPERADMIN_EMAIL") or None,
+            demo_admin_email=os.environ.get("DEMO_ADMIN_EMAIL") or None,
+            demo_admin_name=os.environ.get("DEMO_ADMIN_NAME", "Demo Admin"),
+            demo_admin_gym_name=os.environ.get("DEMO_ADMIN_GYM_NAME", "Valhalla"),
+            demo_athlete_name=os.environ.get("DEMO_ATHLETE_NAME", "Nicolasa"),
+            demo_athlete_email=os.environ.get("DEMO_ATHLETE_EMAIL") or None,
             cors_origin_regex=os.environ.get(
                 "BACKEND_CORS_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
             ),

@@ -44,6 +44,42 @@
         {
           "name": "REASONING_DEADLINE",
           "value": "140"
+        },
+        {
+          "name": "DEMO_LOGIN_ENABLED",
+          "value": "1"
+        },
+        {
+          "name": "DEMO_SUPERADMIN_EMAIL",
+          "value": "syncfitedgeadmin@gmail.com"
+        },
+        {
+          "name": "DEMO_ADMIN_EMAIL",
+          "value": "demo-admin@syncfit.dev"
+        },
+        {
+          "name": "DEMO_ATHLETE_NAME",
+          "value": "Nicolasa"
+        },
+        {
+          "name": "APP_BASE_URL",
+          "value": "https://syncfit.jenilarper.dev"
+        },
+        {
+          "name": "PASSWORD_RESET_MINUTES",
+          "value": "30"
+        },
+        {
+          "name": "SMTP_HOST",
+          "value": "email-smtp.us-east-1.amazonaws.com"
+        },
+        {
+          "name": "SMTP_PORT",
+          "value": "587"
+        },
+        {
+          "name": "SMTP_FROM",
+          "value": "no-reply@mail.jenilarper.dev"
         }
       ],
       "mountPoints": [],

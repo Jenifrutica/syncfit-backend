@@ -235,13 +235,16 @@ def capture(
         include_warmup=include_warmup,
     )
     # OpenCode models reason from the assessment; deterministic evidence is the
-    # last resort if both generative calls are unavailable.
+    # last resort if both generative calls are unavailable. The deterministic
+    # engine gets the conservative pattern policy; the model only the red flags.
+    engine = settings.routine_engine
+    engine_patterns = contraindicated if engine == "ai" else fallback_blocked
     try:
         payload = generate_routine(
             request,
-            engine=settings.routine_engine,
+            engine=engine,
             preferred_exercise_ids=list(preferred),
-            contraindicated_patterns=contraindicated,
+            contraindicated_patterns=engine_patterns,
             gym_machines=gym_machines,
             assessment=assessment,
             symptom_context=context_payload,

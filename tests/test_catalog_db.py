@@ -152,3 +152,35 @@ def test_catalog_edit_survives_a_reseed(client: TestClient):
         assert goblet["name"] == "Sentadilla goblet editada"
     finally:
         client.post("/api/v1/admin/catalog/exercise", json=original, headers=root)
+
+
+def test_catalog_delete_is_soft_and_only_for_superadmin(client: TestClient):
+    root = _root(client)
+    athlete = _register(client, "cat-delete@example.com")
+    exercise = {**NECK_EXERCISE, "id": "test-delete-curl"}
+    try:
+        created = client.post("/api/v1/admin/catalog/exercise", json=exercise, headers=root)
+        assert created.status_code == 200, created.text
+
+        forbidden = client.delete("/api/v1/admin/catalog/exercise/test-delete-curl", headers=athlete)
+        assert forbidden.status_code == 403
+
+        deleted = client.delete("/api/v1/admin/catalog/exercise/test-delete-curl", headers=root)
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["active"] is False
+        assert not any(item["id"] == "test-delete-curl" for item in client.get("/api/v1/catalog").json())
+
+        # The row stays behind (soft delete) so past routines keep resolving it.
+        with get_database().session_scope() as session:
+            row = session.query(CatalogItem).filter_by(kind="exercise", external_id="test-delete-curl").one()
+            assert row.active is False
+
+        missing = client.delete("/api/v1/admin/catalog/exercise/does-not-exist", headers=root)
+        assert missing.status_code == 404
+        unknown_kind = client.delete("/api/v1/admin/catalog/planeta/test-delete-curl", headers=root)
+        assert unknown_kind.status_code == 404
+    finally:
+        with get_database().session_scope() as session:
+            session.query(CatalogItem).filter_by(kind="exercise", external_id="test-delete-curl").delete()
+        with get_database().session_scope() as session:
+            load_registry(session)

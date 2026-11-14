@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 
 import requests
@@ -9,13 +10,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from syncfit_database import User
+from syncfit_database import Gym, Profile, User
 
 from ..config import settings
 from ..db import get_session
 from ..rate_limit import limiter
 from ..services import admin as admin_service
+from ..services import gyms as gym_service
+from ..services import mailer, password_reset
 from ..services.auth import (
     create_access_token,
     current_user,
@@ -26,6 +30,8 @@ from ..services.auth import (
     verify_password,
 )
 from ..services.validation import validate_document_id, validate_person_name
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 # The signed-in person's own account: the token already says who it is, so no /me.
@@ -59,6 +65,19 @@ class DeleteAccountIn(BaseModel):
     # accounts with shorter passwords can still delete themselves.
     password: str | None = Field(default=None, max_length=128)
     confirm: str | None = Field(default=None, max_length=200)
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class DemoLoginIn(BaseModel):
+    role: str = Field(pattern="^(SUPER_ADMIN|GYM_ADMIN|ATHLETE)$")
 
 
 class GoogleIn(BaseModel):
@@ -144,6 +163,84 @@ def login(request: Request, payload: LoginIn, session: Session = Depends(get_ses
     }
 
 
+def _demo_athlete(session: Session) -> User:
+    """The demo athlete (Nicolasa), created with a minimal profile if missing."""
+    name = (settings.demo_athlete_name or "Nicolasa").strip()
+    user = None
+    if settings.demo_athlete_email:
+        user = session.query(User).filter_by(email=settings.demo_athlete_email.strip().lower()).one_or_none()
+    if user is None:
+        user = (
+            session.query(User)
+            .filter(User.role == "ATHLETE", func.lower(User.display_name) == name.lower())
+            .first()
+        )
+    if user is None:
+        email = settings.demo_athlete_email or "nicolasa@syncfit.dev"
+        user = User(
+            email=email.strip().lower(),
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+            display_name=name,
+            role="ATHLETE",
+            active=True,
+        )
+        session.add(user)
+        session.flush()
+    profile = session.query(Profile).filter_by(user_id=user.id).one_or_none()
+    if profile is None:
+        session.add(
+            Profile(
+                user_id=user.id,
+                language="ES",
+                modality="MENSTRUAL_CYCLE",
+                objective="HYPERTROPHY",
+                goal_phase="VOLUME",
+                weekly_training_goal=4,
+                rest_days_allowance=3,
+                cycle_length_days=28,
+            )
+        )
+    session.commit()
+    return user
+
+
+def _demo_admin(session: Session) -> User:
+    """The demo gym admin: reuse an existing admin or create one with a gym."""
+    email = (settings.demo_admin_email or "demo-admin@syncfit.dev").strip().lower()
+    user = session.query(User).filter_by(email=email).one_or_none()
+    if user is not None and user.role != "GYM_ADMIN":
+        user = None
+    if user is None and not settings.demo_admin_email:
+        # No dedicated demo address configured: reuse any active gym admin.
+        user = session.query(User).filter_by(role="GYM_ADMIN", active=True).first()
+    if user is None:
+        user = User(
+            email=email,
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+            display_name=settings.demo_admin_name or "Demo Admin",
+            role="GYM_ADMIN",
+            active=True,
+        )
+        session.add(user)
+        session.flush()
+    if session.query(Gym).filter_by(owner_user_id=user.id).first() is None:
+        gym_service.create_gym(session, user, settings.demo_admin_gym_name or "Valhalla")
+    session.commit()
+    return user
+
+
+def _demo_user(session: Session, role: str) -> User | None:
+    if role == "ATHLETE":
+        return _demo_athlete(session)
+    if role == "GYM_ADMIN":
+        return _demo_admin(session)
+    email = settings.demo_superadmin_email
+    user = session.query(User).filter_by(email=email.strip().lower()).one_or_none() if email else None
+    if user is None:
+        user = session.query(User).filter_by(role=role, active=True).first()
+    return user
+
+
 def _google_info_from_access_token(access_token: str, client_id: str) -> dict:
     """Validate an OAuth access token with Google's tokeninfo endpoint."""
     try:
@@ -160,6 +257,74 @@ def _google_info_from_access_token(access_token: str, client_id: str) -> dict:
     if info.get("aud") != client_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid google token")
     return info
+
+
+@router.post("/demo")
+@limiter.limit("30/minute")
+def demo_login(request: Request, payload: DemoLoginIn, session: Session = Depends(get_session)) -> dict:
+    """One-click access for the evaluation build; off unless DEMO_LOGIN_ENABLED."""
+    if not settings.demo_login_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="demo login disabled")
+    user = _demo_user(session, payload.role)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="demo account not found")
+    if getattr(user, "active", True) is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account deactivated")
+    return {
+        "access_token": create_access_token(user),
+        "token_type": "bearer",
+        "user": _public_user(user),
+    }
+
+
+@router.post("/forgot", status_code=202)
+@limiter.limit("5/minute")
+def forgot_password(
+    request: Request, payload: ForgotPasswordIn, session: Session = Depends(get_session)
+) -> dict:
+    """Email a single-use reset link. The answer never reveals if the account exists."""
+    if not mailer.is_configured():
+        raise HTTPException(status_code=503, detail="email service unavailable")
+    user = session.query(User).filter(func.lower(User.email) == payload.email.strip().lower()).one_or_none()
+    if user is not None and getattr(user, "active", True) is not False:
+        raw = password_reset.issue_token(session, user)
+        profile = session.query(Profile).filter_by(user_id=user.id).one_or_none()
+        language = (profile.language if profile is not None else None) or "ES"
+        link = f"{settings.app_base_url}/recuperar/?token={raw}"
+        try:
+            mailer.send_password_reset(to=user.email, name=user.display_name, link=link, language=language)
+        except Exception:
+            logger.exception("password reset email failed for %s", user.email)
+            raise HTTPException(status_code=502, detail="could not send the email") from None
+    return {"status": "sent"}
+
+
+@router.get("/reset/{token}")
+def check_reset_token(token: str, session: Session = Depends(get_session)) -> dict:
+    row = password_reset.valid_token(session, token)
+    user = session.get(User, row.user_id) if row is not None else None
+    if row is None or user is None:
+        raise HTTPException(status_code=404, detail="invalid or expired token")
+    # The token holder already owns this inbox; the email is needed to digest
+    # the new password client-side, exactly like login and register do.
+    return {"valid": True, "email": user.email}
+
+
+@router.post("/reset", status_code=204)
+@limiter.limit("10/minute")
+def reset_password(
+    request: Request, payload: ResetPasswordIn, session: Session = Depends(get_session)
+) -> None:
+    row = password_reset.valid_token(session, payload.token)
+    if row is None:
+        raise HTTPException(status_code=404, detail="invalid or expired token")
+    user = session.get(User, row.user_id)
+    if user is None or getattr(user, "active", True) is False:
+        raise HTTPException(status_code=404, detail="invalid or expired token")
+    if verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=422, detail="new password must differ from the current one")
+    if not password_reset.apply_reset(session, row, hash_password(payload.password)):
+        raise HTTPException(status_code=404, detail="invalid or expired token")
 
 
 @router.post("/google")
