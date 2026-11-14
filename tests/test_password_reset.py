@@ -104,6 +104,18 @@ def test_forgot_does_not_reveal_unknown_accounts(monkeypatch):
     assert sent == []
 
 
+def test_forgot_stays_generic_when_delivery_fails(monkeypatch):
+    _register()
+
+    def boom(**_kwargs):
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr(auth_module.mailer, "send_password_reset", boom)
+    _configure(monkeypatch, smtp_host="smtp.test", smtp_from="no-reply@test.dev")
+    response = client.post("/api/v1/auth/forgot", json={"email": EMAIL})
+    assert response.status_code == 202
+
+
 def test_forgot_requires_a_configured_mailer(monkeypatch):
     _configure(monkeypatch, smtp_host=None, smtp_from=None)
     response = client.post("/api/v1/auth/forgot", json={"email": EMAIL})

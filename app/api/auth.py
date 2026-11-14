@@ -294,8 +294,8 @@ def forgot_password(
         try:
             mailer.send_password_reset(to=user.email, name=user.display_name, link=link, language=language)
         except Exception:
+            # Never turn a delivery failure into an account-existence oracle.
             logger.exception("password reset email failed for %s", user.email)
-            raise HTTPException(status_code=502, detail="could not send the email") from None
     return {"status": "sent"}
 
 
