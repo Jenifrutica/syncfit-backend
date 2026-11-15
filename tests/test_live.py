@@ -85,3 +85,30 @@ def test_capture_falls_back_to_simulation():
     captured = client.post("/api/v1/capture?muscle_groups=QUADRICEPS&exercises_count=1", headers=headers)
     assert captured.status_code == 200, captured.text
     assert captured.json()["capture_source"] == "simulated"
+
+
+def test_tare_requires_a_connected_device():
+    headers = _register("tare-offline@example.com")
+    response = client.post("/api/v1/live/tare", headers=headers)
+    assert response.status_code == 503
+
+
+def test_tare_sends_a_command_to_the_active_socket():
+    from app.ws import routes as ws_routes
+
+    class FakeSocket:
+        def __init__(self) -> None:
+            self.sent = []
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    headers = _register("tare-online@example.com")
+    fake = FakeSocket()
+    ws_routes._active_socket = fake
+    try:
+        response = client.post("/api/v1/live/tare", headers=headers)
+        assert response.status_code == 202, response.text
+        assert fake.sent == [{"type": "command", "action": "tare"}]
+    finally:
+        ws_routes._active_socket = None

@@ -12,11 +12,29 @@ from ..services.live import record
 
 router = APIRouter()
 
+# The prototype is a single device: keep its socket so HTTP endpoints can ask
+# it to tare or start a set without a second control channel.
+_active_socket: WebSocket | None = None
+
+
+async def send_device_command(action: str) -> bool:
+    """Send one command to the connected prototype; False when it is offline."""
+    socket = _active_socket
+    if socket is None:
+        return False
+    try:
+        await socket.send_json({"type": "command", "action": action})
+        return True
+    except Exception:
+        return False
+
 
 @router.websocket("/ws/telemetry")
 async def telemetry_socket(websocket: WebSocket) -> None:
     """Receive telemetry frames and reply with the deterministic decision."""
+    global _active_socket
     await websocket.accept()
+    _active_socket = websocket
     # One buffer per connection: the stream of a device never mixes with another.
     buffer = TelemetryRingBuffer()
     try:
@@ -37,6 +55,9 @@ async def telemetry_socket(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "error", "payload": {"detail": str(exc)}})
     except WebSocketDisconnect:
         return
+    finally:
+        if _active_socket is websocket:
+            _active_socket = None
 
 
-__all__ = ["router"]
+__all__ = ["router", "send_device_command"]

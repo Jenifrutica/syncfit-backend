@@ -87,6 +87,16 @@ def live_status(max_age_seconds: float = Query(default=15.0, ge=1, le=600)) -> d
     }
 
 
+@router.post("/live/tare", status_code=202)
+async def tare_device(user: User = Depends(current_user)) -> dict[str, str]:
+    """Ask the connected prototype to re-zero its load cell."""
+    from ..ws.routes import send_device_command
+
+    if not await send_device_command("tare"):
+        raise HTTPException(status_code=503, detail="prototype not connected")
+    return {"status": "queued"}
+
+
 @router.get("/options")
 def options(language: str = Query(default="EN"), session: Session = Depends(get_session)) -> dict[str, list[dict[str, Any]]]:
     """Selectable values (muscle groups, objectives, goal phases) read from the database."""
