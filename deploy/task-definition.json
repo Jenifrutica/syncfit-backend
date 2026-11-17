@@ -90,6 +90,14 @@
       "volumesFrom": [],
       "secrets": [
         {
+          "name": "SMTP_USER",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/SMTP_USER"
+        },
+        {
+          "name": "SMTP_PASS",
+          "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/SMTP_PASS"
+        },
+        {
           "name": "SYNCFIT_DATABASE_URL",
           "valueFrom": "arn:aws:ssm:us-east-1:${AWS_ACCOUNT_ID}:parameter/syncfit/SYNCFIT_DATABASE_URL"
         },
