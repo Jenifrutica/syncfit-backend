@@ -134,3 +134,53 @@ def test_issuing_a_new_token_invalidates_the_previous_one(monkeypatch):
     second = sent[1]["link"].rsplit("token=", 1)[1]
     assert client.get(f"/api/v1/auth/reset/{first}").status_code == 404
     assert client.get(f"/api/v1/auth/reset/{second}").status_code == 200
+
+
+@pytest.mark.parametrize("port,ssl", [(587, False), (465, True)])
+def test_mailer_uses_tls_login_and_sends_both_parts(monkeypatch, port, ssl):
+    """The SES path: STARTTLS on 587 (SSL on 465), login with SMTP_USER/PASS, text + HTML."""
+    calls: list = []
+
+    class FakeSMTP:
+        def __init__(self, host, port_, timeout):
+            calls.append(("connect", host, port_, "ssl" if ssl_mode[0] else "plain"))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def starttls(self):
+            calls.append(("starttls",))
+
+        def login(self, user, password):
+            calls.append(("login", user, password))
+
+        def send_message(self, message):
+            calls.append(("send", message["To"], message["From"], message.get_content_type()))
+
+    ssl_mode = [False]
+
+    def plain(*a, **k):
+        ssl_mode[0] = False
+        return FakeSMTP(*a, **k)
+
+    def secure(*a, **k):
+        ssl_mode[0] = True
+        return FakeSMTP(*a, **k)
+
+    monkeypatch.setattr(mailer.smtplib, "SMTP", plain)
+    monkeypatch.setattr(mailer.smtplib, "SMTP_SSL", secure)
+    monkeypatch.setattr(mailer, "settings", replace(
+        mailer.settings, smtp_host="email-smtp.us-east-1.amazonaws.com", smtp_port=port,
+        smtp_from="no-reply@mail.jenilarper.dev", smtp_user="AKIATEST", smtp_password="secret",
+    ))
+    mailer.send_password_reset(to="ana@example.com", name="Ana", link="https://x/recuperar/?token=t", language="ES")
+
+    assert calls[0] == ("connect", "email-smtp.us-east-1.amazonaws.com", port, "ssl" if ssl else "plain")
+    assert (("starttls",) in calls) is (not ssl)
+    assert ("login", "AKIATEST", "secret") in calls
+    send = calls[-1]
+    assert send[0] == "send" and send[1] == "ana@example.com" and "no-reply@mail.jenilarper.dev" in send[2]
+    assert send[3] == "multipart/alternative"
