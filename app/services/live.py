@@ -70,7 +70,7 @@ def record_force(message: dict[str, Any]) -> ForceReading:
     """Store a fast force sample; raises ValueError on a malformed message."""
     global _latest_force
     force = float(message["force_kg"])
-    if not -50.0 <= force <= 200.0:
+    if not -50.0 <= force <= 500.0:
         raise ValueError("force_kg out of range")
     loss_raw = message.get("loss_pct")
     loss = float(loss_raw) if loss_raw is not None else None
