@@ -12,6 +12,7 @@ from .rate_limit import limiter
 from .config import settings
 from .api.auth import account_router, router as auth_router
 from .api.routes import router as api_router
+from .api.bulk import router as bulk_router
 from .ws.routes import router as ws_router
 
 __version__ = settings.version
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(auth_router, prefix=settings.api_prefix)
     app.include_router(account_router, prefix=settings.api_prefix)
+    app.include_router(bulk_router, prefix=settings.api_prefix)
     app.include_router(api_router, prefix=settings.api_prefix)
     app.include_router(ws_router, prefix=settings.api_prefix)
 

@@ -374,9 +374,14 @@ def available_equipment_keys(session: Session, profile: Profile) -> set[str] | N
 
 def available_exercise_ids(session: Session, profile: Profile) -> set[str]:
     """Exercise ids explicitly covered by the gym inventory (bypass equipment filter)."""
+    from syncfit_database import AthleteMachine
+
     ids: set[str] = set()
     for machine in gym_inventory(session, profile):
         ids.update(resolved_exercise_ids(machine))
+    # Machines the athlete typed by name also cover their exercises.
+    for typed in session.query(AthleteMachine).filter_by(profile_id=profile.id).all():
+        ids.update(str(x) for x in (typed.exercise_ids or []))
     return ids
 
 

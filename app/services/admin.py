@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 from syncfit_database import (
+    AthleteMachine,
     CycleLog,
     EnergyCheckIn,
     Gym,
@@ -133,6 +134,8 @@ def delete_user(session: Session, user: User) -> None:
         session.delete(routine)  # cascades routine_exercises
     for record in session.query(SessionRecord).filter_by(user_id=user.id).all():
         session.delete(record)  # cascades telemetry samples
+    if profile_ids:
+        session.query(AthleteMachine).filter(AthleteMachine.profile_id.in_(profile_ids)).delete(synchronize_session=False)
     for profile in session.query(Profile).filter_by(user_id=user.id).all():
         session.delete(profile)  # cascades loads + memberships
     session.query(EnergyCheckIn).filter_by(user_id=user.id).delete()
