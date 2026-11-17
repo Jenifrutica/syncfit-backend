@@ -13,6 +13,8 @@ from syncfit_contracts import (
     supplements_for,
 )
 
+from .options import calorie_factor
+
 _REASON = {
     "SAFE": {"en": "Suitable for your context.", "es": "Adecuado para tu contexto.", "zh": "适合当前情况。"},
     "CAUTION": {
@@ -27,6 +29,7 @@ _REASON = {
     },
 }
 _SAFETY_ORDER = {"SAFE": 0, "CAUTION": 1, "AVOID": 2}
+# Fallback when the goal-phase option has no calorie_factor in the database.
 _GOAL_CALORIE_FACTOR = {
     "VOLUME": 1.12,
     "DEFINITION": 0.82,
@@ -53,7 +56,8 @@ def estimate_daily_macros(request: SupplementRequest) -> MacroNutrients | None:
         bmr = 10 * weight + 6.25 * height - 5 * age - 161
         activity = 1.4
         base = bmr * activity
-        factor = _GOAL_CALORIE_FACTOR.get(_value(request.goal_phase or "MAINTENANCE"), 1.0)
+        phase = _value(request.goal_phase or "MAINTENANCE")
+        factor = calorie_factor(phase) or _GOAL_CALORIE_FACTOR.get(phase, 1.0)
         calories = base * factor
         if request.daily_calories:
             calories = (calories + request.daily_calories) / 2

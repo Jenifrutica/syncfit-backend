@@ -46,9 +46,24 @@ import io
 from ..services.supplements import catalog as supplements_catalog
 from ..services.supplements import recommend
 from ..services import profiles_db
+from ..services import options as options_service
 from ..services.validation import validate_document_id, validate_gym_name, validate_person_name
 
 router = APIRouter()
+
+
+def _ensure_known_options(session: Session, **values: Any) -> None:
+    """Reject objective/goal_phase values that are not active options (422).
+
+    The accepted values come from the `app_options` table, so a value added by
+    the super admin is valid at once and a deactivated one stops being offered.
+    """
+    for category, value in values.items():
+        if value in (None, ""):
+            continue
+        allowed = options_service.active_values(session, category) or options_service.default_values(category)
+        if str(value) not in allowed:
+            raise HTTPException(status_code=422, detail=f"unknown {category}: {value}")
 
 
 def _ensure_known_groups(groups: Any, session: Session) -> None:
@@ -131,6 +146,8 @@ def create_routine(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     _ensure_known_groups(payload.get("muscle_groups"), session)
+    _ensure_known_options(session, objective=payload.get("objective"))
+    options_service.sync_engine_options(session)
     try:
         request = RoutineRequest.model_validate(payload)
     except Exception as exc:
@@ -155,7 +172,10 @@ def supplements(
     body_fat_pct: float | None = Query(default=None),
     age: int | None = Query(default=None),
     daily_calories: int | None = Query(default=None),
+    session: Session = Depends(get_session),
 ) -> dict[str, Any]:
+    _ensure_known_options(session, objective=objective, goal_phase=goal_phase)
+    options_service.sync_engine_options(session)
     try:
         request = SupplementRequest(
             modality=modality,
@@ -332,7 +352,8 @@ def exercise_variants(exercise_id: str, language: str = Query(default="EN")) -> 
 
 
 @router.post("/profiles")
-def create_or_update_profile(payload: dict[str, Any]) -> dict[str, Any]:
+def create_or_update_profile(payload: dict[str, Any], session: Session = Depends(get_session)) -> dict[str, Any]:
+    _ensure_known_options(session, objective=payload.get("objective"), goal_phase=payload.get("goal_phase"))
     try:
         profile = UserProfile.model_validate(payload)
     except Exception as exc:
@@ -376,6 +397,7 @@ def update_my_profile(
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
+    _ensure_known_options(session, objective=payload.get("objective"), goal_phase=payload.get("goal_phase"))
     profile = profiles_db.upsert_profile(session, user, payload)
     session.commit()
     session.refresh(profile)
@@ -431,6 +453,7 @@ def take_data(
     profile = profiles_db.get_profile(session, user)
     groups = [g.strip() for g in muscle_groups.split(",")] if muscle_groups else None
     _ensure_known_groups(groups, session)
+    options_service.sync_engine_options(session)
     result = capture(
         session,
         user,
@@ -1024,7 +1047,20 @@ def admin_delete_user(user_id: str, payload: dict[str, Any], user: User = Depend
 # The database is the source of truth: every write refreshes the in-memory
 # registry so the reasoning engine and the public endpoints see it immediately.
 
-_OPTION_CATEGORIES = {"muscle_group_isolated", "muscle_group_general", "objective", "goal_phase"}
+_OPTION_CATEGORIES = set(options_service.CATEGORIES)
+
+
+def _clean_meta(meta: Any) -> dict[str, Any] | None:
+    if meta is None:
+        return None
+    if not isinstance(meta, dict):
+        raise HTTPException(status_code=422, detail="meta must be an object")
+    for key in ("sets", "reps", "rest_compound", "rest_iso"):
+        if key in meta and not (isinstance(meta[key], (int, float)) and 1 <= meta[key] <= 600):
+            raise HTTPException(status_code=422, detail=f"meta.{key} must be a number between 1 and 600")
+    if "calorie_factor" in meta and not (isinstance(meta["calorie_factor"], (int, float)) and 0.5 <= meta["calorie_factor"] <= 1.5):
+        raise HTTPException(status_code=422, detail="meta.calorie_factor must be between 0.5 and 1.5")
+    return meta
 
 
 def _option_json(row: AppOption) -> dict[str, Any]:
@@ -1035,6 +1071,7 @@ def _option_json(row: AppOption) -> dict[str, Any]:
         "labels": row.labels or {},
         "sort_order": row.sort_order,
         "active": row.active,
+        "meta": row.meta or {},
     }
 
 
@@ -1060,7 +1097,7 @@ def admin_save_option(payload: dict[str, Any], user: User = Depends(require_supe
     if category not in _OPTION_CATEGORIES:
         raise HTTPException(status_code=422, detail=f"category must be one of {sorted(_OPTION_CATEGORIES)}")
     value = str(payload.get("value") or "").strip().upper().replace(" ", "_")
-    if not value or len(value) > 60 or not all(ch.isalnum() or ch == "_" for ch in value):
+    if not value or len(value) > 40 or not all(ch.isalnum() or ch == "_" for ch in value):
         raise HTTPException(status_code=422, detail="value must be letters, digits or underscores")
     labels = payload.get("labels")
     if not isinstance(labels, dict) or not labels.get("en"):
@@ -1073,8 +1110,11 @@ def admin_save_option(payload: dict[str, Any], user: User = Depends(require_supe
     if payload.get("sort_order") is not None:
         row.sort_order = int(payload["sort_order"])
     row.active = bool(payload.get("active", True))
+    if "meta" in payload:
+        row.meta = _clean_meta(payload.get("meta"))
     session.commit()
     session.refresh(row)
+    options_service.sync_engine_options(session)
     return _option_json(row)
 
 
@@ -1092,8 +1132,11 @@ def admin_update_option(option_id: str, payload: dict[str, Any], user: User = De
         row.sort_order = int(payload["sort_order"])
     if payload.get("active") is not None:
         row.active = bool(payload["active"])
+    if "meta" in payload:
+        row.meta = _clean_meta(payload.get("meta"))
     session.commit()
     session.refresh(row)
+    options_service.sync_engine_options(session)
     return _option_json(row)
 
 

@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
         from .db import get_database
         from .services.admin import ensure_superadmin
         from .services.catalog_db import ensure_catalog, load_registry
-        from .services.options import ensure_default_options
+        from .services.options import ensure_default_options, sync_engine_options
 
         session = get_database().session()
         try:
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
             ensure_catalog(session)
             session.commit()
             load_registry(session)
+            sync_engine_options(session)
         finally:
             session.close()
 

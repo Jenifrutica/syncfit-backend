@@ -9,6 +9,8 @@ ISOLATED = "muscle_group_isolated"
 GENERAL = "muscle_group_general"
 OBJECTIVE = "objective"
 GOAL_PHASE = "goal_phase"
+EQUIPMENT = "equipment"
+CATEGORIES = (ISOLATED, GENERAL, OBJECTIVE, GOAL_PHASE, EQUIPMENT)
 
 # (category, value, labels). The order of the list is the display order.
 DEFAULT_OPTIONS: list[tuple[str, str, dict[str, str]]] = [
@@ -42,7 +44,41 @@ DEFAULT_OPTIONS: list[tuple[str, str, dict[str, str]]] = [
     (GOAL_PHASE, "MAINTENANCE", {"en": "Maintenance", "es": "Mantenimiento", "zh": "维持"}),
     (GOAL_PHASE, "STRENGTH_FOCUS", {"en": "Strength focus", "es": "Enfoque fuerza", "zh": "力量优先"}),
     (GOAL_PHASE, "RECOVERY", {"en": "Recovery", "es": "Recuperación", "zh": "恢复期"}),
+    # Equipment a gym machine can be; the frontend key is value.lower() with "-".
+    (EQUIPMENT, "MACHINE", {"en": "Machine", "es": "Máquina", "zh": "固定器械"}),
+    (EQUIPMENT, "SMITH", {"en": "Smith", "es": "Smith", "zh": "史密斯机"}),
+    (EQUIPMENT, "BARBELL", {"en": "Barbell", "es": "Barra", "zh": "杠铃"}),
+    (EQUIPMENT, "DUMBBELL", {"en": "Dumbbells", "es": "Mancuernas", "zh": "哑铃"}),
+    (EQUIPMENT, "BENCH", {"en": "Bench", "es": "Banco", "zh": "训练凳"}),
+    (EQUIPMENT, "CABLE", {"en": "Cable", "es": "Polea", "zh": "龙门架"}),
+    (EQUIPMENT, "PULLUP_BAR", {"en": "Pull-up bar", "es": "Barra de dominadas", "zh": "引体向上杆"}),
+    (EQUIPMENT, "DIP_BAR", {"en": "Dip bars", "es": "Paralelas", "zh": "双杠"}),
+    (EQUIPMENT, "GHD", {"en": "GHD", "es": "GHD", "zh": "GHD"}),
+    (EQUIPMENT, "BOX", {"en": "Box", "es": "Cajón", "zh": "跳箱"}),
+    (EQUIPMENT, "BAND", {"en": "Band", "es": "Banda", "zh": "弹力带"}),
+    (EQUIPMENT, "NONE", {"en": "Bodyweight", "es": "Peso corporal", "zh": "自重"}),
 ]
+
+# Parameters the engines read from each option (seeded once, editable in the DB).
+# Objective: sets x reps and rest seconds (Schoenfeld 2017/2021, Currier 2023).
+# Goal phase: daily calorie factor over maintenance.
+DEFAULT_META: dict[tuple[str, str], dict] = {
+    (OBJECTIVE, "STRENGTH"): {"sets": 4, "reps": 5, "rest_compound": 180, "rest_iso": 120},
+    (OBJECTIVE, "HYPERTROPHY"): {"sets": 3, "reps": 10, "rest_compound": 120, "rest_iso": 75},
+    (OBJECTIVE, "PERFORMANCE"): {"sets": 3, "reps": 8, "rest_compound": 120, "rest_iso": 75},
+    (OBJECTIVE, "FAT_LOSS"): {"sets": 3, "reps": 14, "rest_compound": 75, "rest_iso": 45},
+    (OBJECTIVE, "HEALTH"): {"sets": 3, "reps": 12, "rest_compound": 75, "rest_iso": 45},
+    (OBJECTIVE, "RECOVERY"): {"sets": 2, "reps": 12, "rest_compound": 60, "rest_iso": 45},
+    (OBJECTIVE, "GESTATIONAL_HEALTH"): {"sets": 3, "reps": 12, "rest_compound": 75, "rest_iso": 60},
+    (GOAL_PHASE, "VOLUME"): {"calorie_factor": 1.12},
+    (GOAL_PHASE, "DEFINITION"): {"calorie_factor": 0.82},
+    (GOAL_PHASE, "MAINTENANCE"): {"calorie_factor": 1.0},
+    (GOAL_PHASE, "STRENGTH_FOCUS"): {"calorie_factor": 1.05},
+    (GOAL_PHASE, "RECOVERY"): {"calorie_factor": 1.0},
+}
+
+# Goal-phase calorie factors loaded from the database (see sync_engine_options).
+_calorie_factors: dict[str, float] = {}
 
 
 def ensure_default_options(session: Session) -> int:
@@ -50,12 +86,17 @@ def ensure_default_options(session: Session) -> int:
 
     That way an edit made directly in the database survives a restart.
     """
-    existing = {(o.category, o.value) for o in session.query(AppOption).all()}
+    existing = {(o.category, o.value): o for o in session.query(AppOption).all()}
     added = 0
     for order, (category, value, labels) in enumerate(DEFAULT_OPTIONS):
-        if (category, value) in existing:
+        meta = DEFAULT_META.get((category, value))
+        row = existing.get((category, value))
+        if row is not None:
+            # Only fill parameters that were never set; edits are kept.
+            if meta and not row.meta:
+                row.meta = dict(meta)
             continue
-        session.add(AppOption(category=category, value=value, labels=labels, sort_order=order))
+        session.add(AppOption(category=category, value=value, labels=labels, sort_order=order, meta=meta))
         added += 1
     session.flush()
     return added
@@ -78,4 +119,45 @@ def list_options(session: Session, language: str = "EN") -> dict[str, list[dict]
     return grouped
 
 
-__all__ = ["DEFAULT_OPTIONS", "ensure_default_options", "list_options"]
+def active_values(session: Session, category: str) -> set[str]:
+    rows = session.query(AppOption.value).filter(AppOption.category == category, AppOption.active.is_(True)).all()
+    return {value for (value,) in rows}
+
+
+def default_values(category: str) -> set[str]:
+    """Seeded values, used only before the table has been seeded."""
+    return {value for cat, value, _ in DEFAULT_OPTIONS if cat == category}
+
+
+def sync_engine_options(session: Session) -> None:
+    """Hand the option parameters stored in the DB to the engines."""
+    from syncfit_ai import options as ai_options
+
+    rows = session.query(AppOption).filter(AppOption.category.in_([OBJECTIVE, GOAL_PHASE])).all()
+    ai_options.set_objectives(
+        [{"value": r.value, "labels": r.labels or {}, "meta": r.meta or {}} for r in rows if r.category == OBJECTIVE and r.active]
+    )
+    factors: dict[str, float] = {}
+    for row in rows:
+        value = (row.meta or {}).get("calorie_factor") if row.category == GOAL_PHASE else None
+        if isinstance(value, (int, float)) and 0.5 <= float(value) <= 1.5:
+            factors[row.value] = float(value)
+    _calorie_factors.clear()
+    _calorie_factors.update(factors)
+
+
+def calorie_factor(goal_phase: str | None) -> float | None:
+    return _calorie_factors.get(goal_phase or "MAINTENANCE")
+
+
+__all__ = [
+    "CATEGORIES",
+    "DEFAULT_META",
+    "DEFAULT_OPTIONS",
+    "active_values",
+    "calorie_factor",
+    "default_values",
+    "ensure_default_options",
+    "list_options",
+    "sync_engine_options",
+]
