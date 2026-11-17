@@ -206,9 +206,13 @@ def _demo_athlete(session: Session) -> User:
 
 def _demo_admin(session: Session) -> User:
     """The demo gym admin: reuse an existing admin or create one with a gym."""
-    email = (settings.demo_admin_email or "demo-admin@syncfit.dev").strip().lower()
-    user = session.query(User).filter_by(email=email).one_or_none()
+    email = (settings.demo_admin_email or "asgardcito@asgard.com").strip().lower()
+    user = session.query(User).filter(func.lower(User.email) == email).one_or_none()
     if user is not None and user.role != "GYM_ADMIN":
+        if settings.demo_admin_email:
+            # The configured address belongs to another role: creating it again
+            # would hit the unique email constraint.
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="demo admin email has another role")
         user = None
     if user is None and not settings.demo_admin_email:
         # No dedicated demo address configured: reuse any active gym admin.
@@ -224,7 +228,7 @@ def _demo_admin(session: Session) -> User:
         session.add(user)
         session.flush()
     if session.query(Gym).filter_by(owner_user_id=user.id).first() is None:
-        gym_service.create_gym(session, user, settings.demo_admin_gym_name or "Valhalla")
+        gym_service.create_gym(session, user, settings.demo_admin_gym_name or "Asgard")
     session.commit()
     return user
 

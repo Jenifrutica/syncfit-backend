@@ -88,6 +88,38 @@ def test_demo_admin_is_created_once_with_a_gym(monkeypatch):
         _cleanup_user(DEMO_ADMIN_EMAIL)
 
 
+def test_demo_admin_existing_account_keeps_its_gym(monkeypatch):
+    email = "asgardcito-test@asgard.com"
+    _cleanup_user(email)
+    _configure(monkeypatch, demo_login_enabled=True, demo_admin_email=email, demo_admin_gym_name="Otro")
+    try:
+        with get_database().session_scope() as session:
+            user = User(email=email, password_hash="x", display_name="Asgardcito", role="GYM_ADMIN", active=True)
+            session.add(user)
+            session.flush()
+            session.add(Gym(name="Asgard", code="TSTASG", owner_user_id=user.id))
+        response = client.post("/api/v1/auth/demo", json={"role": "GYM_ADMIN"})
+        assert response.status_code == 200, response.text
+        token = response.json()["access_token"]
+        mine = client.get("/api/v1/gyms/mine", headers={"Authorization": f"Bearer {token}"})
+        assert [g["name"] for g in mine.json()] == ["Asgard"]
+    finally:
+        _cleanup_user(email)
+
+
+def test_demo_admin_email_with_another_role_conflicts(monkeypatch):
+    email = "not-an-admin@example.com"
+    _cleanup_user(email)
+    _configure(monkeypatch, demo_login_enabled=True, demo_admin_email=email)
+    try:
+        with get_database().session_scope() as session:
+            session.add(User(email=email, password_hash="x", display_name="A", role="ATHLETE", active=True))
+        response = client.post("/api/v1/auth/demo", json={"role": "GYM_ADMIN"})
+        assert response.status_code == 409
+    finally:
+        _cleanup_user(email)
+
+
 def test_demo_athlete_is_created_once_with_a_profile(monkeypatch):
     _cleanup_user(DEMO_EMAIL)
     _configure(

@@ -57,7 +57,7 @@ class Settings:
     demo_superadmin_email: str | None = None
     demo_admin_email: str | None = None
     demo_admin_name: str = "Demo Admin"
-    demo_admin_gym_name: str = "Valhalla"
+    demo_admin_gym_name: str = "Asgard"
     demo_athlete_name: str = "Nicolasa"
     demo_athlete_email: str | None = None
 
@@ -101,7 +101,7 @@ class Settings:
             demo_superadmin_email=os.environ.get("DEMO_SUPERADMIN_EMAIL") or None,
             demo_admin_email=os.environ.get("DEMO_ADMIN_EMAIL") or None,
             demo_admin_name=os.environ.get("DEMO_ADMIN_NAME", "Demo Admin"),
-            demo_admin_gym_name=os.environ.get("DEMO_ADMIN_GYM_NAME", "Valhalla"),
+            demo_admin_gym_name=os.environ.get("DEMO_ADMIN_GYM_NAME", "Asgard"),
             demo_athlete_name=os.environ.get("DEMO_ATHLETE_NAME", "Nicolasa"),
             demo_athlete_email=os.environ.get("DEMO_ATHLETE_EMAIL") or None,
             cors_origin_regex=os.environ.get(

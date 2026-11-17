@@ -55,7 +55,11 @@
         },
         {
           "name": "DEMO_ADMIN_EMAIL",
-          "value": "demo-admin@syncfit.dev"
+          "value": "asgardcito@asgard.com"
+        },
+        {
+          "name": "DEMO_ADMIN_GYM_NAME",
+          "value": "Asgard"
         },
         {
           "name": "DEMO_ATHLETE_NAME",
