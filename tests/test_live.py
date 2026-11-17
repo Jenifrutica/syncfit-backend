@@ -112,3 +112,26 @@ def test_tare_sends_a_command_to_the_active_socket():
         assert fake.sent == [{"type": "command", "action": "tare"}]
     finally:
         ws_routes._active_socket = None
+
+
+def test_fast_force_channel_over_websocket():
+    import time
+
+    with client.websocket_connect("/api/v1/ws/telemetry") as ws:
+        ws.send_json({"type": "force", "force_kg": 8.4, "loss_pct": 12.3})
+        ws.send_json({"type": "force", "force_kg": "bad"})  # ignored, no reply
+        ws.send_json(FRAME)  # a full frame still gets its prescription
+        assert ws.receive_json()["type"] == "prescription"
+    body = client.get("/api/v1/live").json()
+    assert body["force"]["force_kg"] == 8.4 and body["force"]["loss_pct"] == 12.3
+    assert body["force"]["age_seconds"] < 1.0 and body["connected"] is True
+
+    started = time.monotonic()
+    live.record_force({"force_kg": 3.0})
+    assert live.latest_force().loss_pct is None
+    assert live.latest_force(max_age_seconds=0.0) is None or time.monotonic() - started < 0.01
+
+
+def test_live_without_force_reports_null():
+    live.clear()
+    assert client.get("/api/v1/live").json()["force"] is None

@@ -8,7 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..analytics.ring_buffer import TelemetryRingBuffer
 from ..services.engine import evaluate_frame
-from ..services.live import record
+from ..services.live import record, record_force
 
 router = APIRouter()
 
@@ -40,6 +40,13 @@ async def telemetry_socket(websocket: WebSocket) -> None:
     try:
         while True:
             message: Any = await websocket.receive_json()
+            if isinstance(message, dict) and message.get("type") == "force":
+                # Fast channel: no reply, no decision; just the newest value.
+                try:
+                    record_force(message)
+                except (KeyError, TypeError, ValueError):
+                    pass
+                continue
             frame = message.get("payload", message) if isinstance(message, dict) else message
             try:
                 decision = evaluate_frame(frame)

@@ -29,6 +29,7 @@ from ..services.calendar import build_calendar
 from ..services.cycles import compute_timeline
 from ..services.engine import evaluate_frame
 from ..services.live import latest as latest_live
+from ..services.live import latest_force
 from ..services.machines import list_machines
 from ..services.options import list_options
 from ..services.routines import generate_routine
@@ -93,7 +94,11 @@ def live_status(max_age_seconds: float = Query(default=15.0, ge=1, le=600)) -> d
     payload only contains the device's own biomarkers.
     """
     reading = latest_live(max_age_seconds=max_age_seconds)
+    force = latest_force()
     return {
+        "force": None
+        if force is None
+        else {"force_kg": round(force.force_kg, 2), "loss_pct": None if force.loss_pct is None else round(force.loss_pct, 1), "age_seconds": round(force.age_seconds, 2)},
         "connected": reading is not None,
         "age_seconds": None if reading is None else round(reading.age_seconds, 1),
         "device_id": None if reading is None else reading.frame.get("device_id"),

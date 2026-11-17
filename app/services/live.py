@@ -49,11 +49,62 @@ def latest(max_age_seconds: float = MAX_AGE_SECONDS) -> LiveReading | None:
     return reading
 
 
+# Fast force channel: the prototype sends {"type":"force",...} every ~100 ms so
+# the force step does not wait for the 2.56 s telemetry frame.
+FORCE_MAX_AGE_SECONDS = 5.0
+_latest_force: "ForceReading | None" = None
+
+
+@dataclass(frozen=True)
+class ForceReading:
+    force_kg: float
+    loss_pct: float | None
+    received_at: float
+
+    @property
+    def age_seconds(self) -> float:
+        return max(0.0, time.monotonic() - self.received_at)
+
+
+def record_force(message: dict[str, Any]) -> ForceReading:
+    """Store a fast force sample; raises ValueError on a malformed message."""
+    global _latest_force
+    force = float(message["force_kg"])
+    if not -50.0 <= force <= 200.0:
+        raise ValueError("force_kg out of range")
+    loss_raw = message.get("loss_pct")
+    loss = float(loss_raw) if loss_raw is not None else None
+    if loss is not None and not -100.0 <= loss <= 100.0:
+        raise ValueError("loss_pct out of range")
+    reading = ForceReading(force_kg=force, loss_pct=loss, received_at=time.monotonic())
+    with _lock:
+        _latest_force = reading
+    return reading
+
+
+def latest_force(max_age_seconds: float = FORCE_MAX_AGE_SECONDS) -> ForceReading | None:
+    with _lock:
+        reading = _latest_force
+    if reading is None or reading.age_seconds > max_age_seconds:
+        return None
+    return reading
+
+
 def clear() -> None:
-    """Forget the last frame (tests, disconnect)."""
-    global _latest
+    """Forget the last frame and force sample (tests, disconnect)."""
+    global _latest, _latest_force
     with _lock:
         _latest = None
+        _latest_force = None
 
 
-__all__ = ["LiveReading", "MAX_AGE_SECONDS", "clear", "latest", "record"]
+__all__ = [
+    "ForceReading",
+    "LiveReading",
+    "MAX_AGE_SECONDS",
+    "clear",
+    "latest",
+    "latest_force",
+    "record",
+    "record_force",
+]
