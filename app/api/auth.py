@@ -303,6 +303,30 @@ def forgot_password(
     return {"status": "sent"}
 
 
+@router.post("/forgot/simulated")
+@limiter.limit("10/minute")
+def forgot_password_simulated(
+    request: Request, payload: ForgotPasswordIn, session: Session = Depends(get_session)
+) -> dict:
+    """Evaluation only: for the demo accounts with made-up addresses, hand the
+    reset link to the screen instead of emailing it. Never for a super admin,
+    and 404 for every other address (those get the real email)."""
+    email = payload.email.strip().lower()
+    if not settings.demo_login_enabled or email not in settings.demo_simulated_emails:
+        raise HTTPException(status_code=404, detail="not a simulated address")
+    user = session.query(User).filter(func.lower(User.email) == email).one_or_none()
+    if user is None or user.role == "SUPER_ADMIN" or getattr(user, "active", True) is False:
+        raise HTTPException(status_code=404, detail="not a simulated address")
+    raw = password_reset.issue_token(session, user)
+    return {
+        "simulated": True,
+        "to": user.email,
+        "token": raw,
+        "link": f"{settings.app_base_url}/recuperar/?token={raw}",
+        "expires_minutes": settings.password_reset_minutes,
+    }
+
+
 @router.get("/reset/{token}")
 def check_reset_token(token: str, session: Session = Depends(get_session)) -> dict:
     row = password_reset.valid_token(session, token)

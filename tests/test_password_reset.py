@@ -184,3 +184,31 @@ def test_mailer_uses_tls_login_and_sends_both_parts(monkeypatch, port, ssl):
     send = calls[-1]
     assert send[0] == "send" and send[1] == "ana@example.com" and "no-reply@mail.jenilarper.dev" in send[2]
     assert send[3] == "multipart/alternative"
+
+
+def test_simulated_forgot_shows_the_link_for_demo_addresses(monkeypatch):
+    _register()
+    _configure(monkeypatch, demo_login_enabled=True, demo_simulated_emails=(EMAIL,))
+    sent: list = []
+    monkeypatch.setattr(auth_module.mailer, "send_password_reset", lambda **kw: sent.append(kw))
+    response = client.post("/api/v1/auth/forgot/simulated", json={"email": EMAIL.upper()})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["simulated"] is True and body["to"] == EMAIL and body["token"]
+    assert sent == []  # nothing is emailed
+    # The on-screen token works like the emailed one.
+    assert client.get(f"/api/v1/auth/reset/{body['token']}").json()["email"] == EMAIL
+    assert client.post("/api/v1/auth/reset", json={"token": body["token"], "password": NEW_PASSWORD}).status_code == 204
+    assert client.post("/api/v1/auth/login", json={"email": EMAIL, "password": NEW_PASSWORD}).status_code == 200
+
+
+def test_simulated_forgot_refuses_real_addresses_super_admins_and_disabled_demo(monkeypatch):
+    _register()
+    _configure(monkeypatch, demo_login_enabled=True, demo_simulated_emails=(EMAIL, "root@syncfit.dev"))
+    assert client.post("/api/v1/auth/forgot/simulated", json={"email": "otra@example.com"}).status_code == 404
+    from app.services.admin import ensure_superadmin
+    with get_database().session_scope() as s:
+        ensure_superadmin(s)
+    assert client.post("/api/v1/auth/forgot/simulated", json={"email": "root@syncfit.dev"}).status_code == 404
+    _configure(monkeypatch, demo_login_enabled=False, demo_simulated_emails=(EMAIL,))
+    assert client.post("/api/v1/auth/forgot/simulated", json={"email": EMAIL}).status_code == 404

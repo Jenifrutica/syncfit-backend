@@ -60,6 +60,9 @@ class Settings:
     demo_admin_gym_name: str = "Asgard"
     demo_athlete_name: str = "Nicolasa"
     demo_athlete_email: str | None = None
+    # Evaluation accounts with made-up addresses: "forgot password" shows the
+    # reset form on screen (simulated email) instead of sending one.
+    demo_simulated_emails: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -104,6 +107,11 @@ class Settings:
             demo_admin_gym_name=os.environ.get("DEMO_ADMIN_GYM_NAME", "Asgard"),
             demo_athlete_name=os.environ.get("DEMO_ATHLETE_NAME", "Nicolasa"),
             demo_athlete_email=os.environ.get("DEMO_ATHLETE_EMAIL") or None,
+            demo_simulated_emails=tuple(
+                e.strip().lower()
+                for e in os.environ.get("DEMO_SIMULATED_EMAILS", "asgardcito@asgard.com,nicolasa@syncfit.dev").split(",")
+                if e.strip()
+            ),
             cors_origin_regex=os.environ.get(
                 "BACKEND_CORS_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
             ),
