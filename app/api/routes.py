@@ -48,6 +48,7 @@ from ..services.supplements import catalog as supplements_catalog
 from ..services.supplements import recommend
 from ..services import profiles_db
 from ..services import options as options_service
+from ..services import capture_jobs
 from ..services.validation import validate_document_id, validate_gym_name, validate_person_name
 
 router = APIRouter()
@@ -452,28 +453,59 @@ def take_data(
     energy_level: str | None = Query(default=None),
     include_warmup: bool = Query(default=True),
     use_live: bool = Query(default=True),
+    request_id: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$"),
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     profile = profiles_db.get_profile(session, user)
     groups = [g.strip() for g in muscle_groups.split(",")] if muscle_groups else None
     _ensure_known_groups(groups, session)
+
+    job = None
+    if request_id:
+        # Same id again (reload, lost connection, double tap): never generate twice.
+        state, job = capture_jobs.claim(session, user, request_id)
+        if state == "forbidden":
+            raise HTTPException(status_code=409, detail="request_id already used")
+        if state == "done":
+            return job.result
+        if state == "pending":
+            raise HTTPException(status_code=409, detail={"status": "pending", "request_id": request_id})
+
     options_service.sync_engine_options(session)
-    result = capture(
-        session,
-        user,
-        profile,
-        language=language,
-        scenario=scenario,
-        muscle_groups=groups,
-        exercises_count=exercises_count,
-        time_budget_minutes=time_budget_minutes,
-        energy_level=energy_level,
-        include_warmup=include_warmup,
-        use_live=use_live,
-    )
-    session.commit()
+    try:
+        result = capture(
+            session,
+            user,
+            profile,
+            language=language,
+            scenario=scenario,
+            muscle_groups=groups,
+            exercises_count=exercises_count,
+            time_budget_minutes=time_budget_minutes,
+            energy_level=energy_level,
+            include_warmup=include_warmup,
+            use_live=use_live,
+        )
+        if job is not None:
+            capture_jobs.finish(job, result)
+        session.commit()
+    except Exception as exc:
+        if request_id:
+            capture_jobs.fail(session, request_id, str(exc) or exc.__class__.__name__)
+        raise
     return result
+
+
+@router.get("/capture/{request_id}")
+def capture_status(request_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    """State of a generation started with ``request_id`` (PENDING, DONE + result, ERROR)."""
+    job = capture_jobs.get(session, user, request_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown request_id")
+    if job.status == "PENDING" and capture_jobs.is_stale(job):
+        return {"request_id": request_id, "status": "STALE"}
+    return capture_jobs.serialize(job)
 
 
 @router.get("/routine/latest")
