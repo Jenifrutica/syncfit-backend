@@ -216,14 +216,14 @@ def list_memberships(session: Session, profile: Profile) -> list[GymMembership]:
 
 
 def leave_gym(session: Session, profile: Profile, gym_id: str) -> bool:
-    membership = (
+    # Atomic delete: concurrent "leave" calls report the membership once.
+    deleted = (
         session.query(GymMembership)
         .filter_by(profile_id=profile.id, gym_id=gym_id)
-        .one_or_none()
+        .delete(synchronize_session=False)
     )
-    if membership is None:
+    if not deleted:
         return False
-    session.delete(membership)
     if profile.active_gym_id == gym_id:
         profile.active_gym_id = None
     session.flush()

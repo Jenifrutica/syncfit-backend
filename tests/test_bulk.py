@@ -128,3 +128,41 @@ def test_bulk_routes_require_auth_and_roles():
     h = _athlete()
     assert client.request("DELETE", "/api/v1/admin/options", json={"ids": ["x"]}, headers=h).status_code == 403
     assert client.request("DELETE", "/api/v1/profile/machines", json={"ids": ["x"]}).status_code == 401
+
+
+def test_parallel_bulk_deletes_count_each_item_once():
+    import threading
+
+    h = _athlete()
+    tokens = [client.post("/api/v1/shares", json={"permissions": ["PROFILE"]}, headers=h).json()["token"] for _ in range(5)]
+    totals: list[int] = []
+
+    def wipe():
+        r = client.request("DELETE", "/api/v1/shares", json={"ids": tokens}, headers=h)
+        assert r.status_code == 200
+        totals.append(len(r.json()["deleted"]))
+
+    threads = [threading.Thread(target=wipe) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sum(totals) == 5
+
+
+def test_parallel_machine_edits_do_not_lose_updates():
+    import threading
+
+    h = _athlete()
+    catalog = [m["id"] for m in client.get("/api/v1/machines").json()][:6]
+
+    def add(machine_id):
+        assert client.post("/api/v1/profile/machines", json={"ids": [machine_id]}, headers=h).status_code == 200
+
+    threads = [threading.Thread(target=add, args=(m,)) for m in catalog]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    mine = {m["id"] for m in client.get("/api/v1/profile/machines", headers=h).json()}
+    assert mine == set(catalog)

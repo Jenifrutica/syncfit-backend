@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from syncfit_database import AppOption, User
+from syncfit_database import AppOption, GymMachine, Profile, User
 
 from ..db import get_session
 from ..services import admin as admin_service
@@ -58,6 +58,16 @@ def _profile(session: Session, user: User):
     return profile
 
 
+def _locked_profile(session: Session, profile_id: str) -> Profile:
+    """Fresh copy of the profile for a read-modify-write of its JSON lists.
+
+    Ends the current read transaction first, so the row is re-read with the
+    latest committed value, and locks it (SELECT ... FOR UPDATE on Postgres).
+    """
+    session.commit()
+    return session.query(Profile).filter_by(id=profile_id).with_for_update().populate_existing().one()
+
+
 # --- Athlete ---------------------------------------------------------------
 
 
@@ -69,35 +79,49 @@ def my_machines(language: str = Query(default="EN"), user: User = Depends(curren
 @router.post("/profile/machines")
 def add_my_machines(payload: dict[str, Any], language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     """Add catalog machines (``{"ids": [...]}``) or one typed by name (``{"name": "..."}``)."""
-    profile = _profile(session, user)
+    profile_id = _profile(session, user).id
     name = str(payload.get("name") or "").strip()
+    info: dict[str, Any] | None = None
+    ids: list[str] = []
     if name:
         if len(name) > 80:
             raise HTTPException(status_code=422, detail="name too long")
         from .routes import _machine_ai
 
-        athlete_machines.add_typed(session, profile, name, language, _machine_ai)
+        info = athlete_machines.infer_typed(name, language, _machine_ai)  # slow: outside the lock
     else:
-        unknown = athlete_machines.add_catalog(session, profile, _ids(payload))
-        if unknown:
-            session.rollback()
-            raise HTTPException(status_code=422, detail=f"unknown machines: {', '.join(unknown)}")
-    session.commit()
+        ids = _ids(payload)
+    with athlete_machines.profile_lock(profile_id):
+        profile = _locked_profile(session, profile_id)
+        if info is not None:
+            athlete_machines.add_typed(session, profile, name, info)
+        else:
+            unknown = athlete_machines.add_catalog(session, profile, ids)
+            if unknown:
+                session.rollback()
+                raise HTTPException(status_code=422, detail=f"unknown machines: {', '.join(unknown)}")
+        session.commit()
     return athlete_machines.list_selected(session, profile, language)
 
 
 @router.delete("/profile/machines/{machine_id}", status_code=204)
 def remove_my_machine(machine_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> None:
-    removed, _ = athlete_machines.remove(session, _profile(session, user), [machine_id])
-    if not removed:
-        raise HTTPException(status_code=404, detail="machine not selected")
-    session.commit()
+    profile_id = _profile(session, user).id
+    with athlete_machines.profile_lock(profile_id):
+        removed, _ = athlete_machines.remove(session, _locked_profile(session, profile_id), [machine_id])
+        if not removed:
+            session.rollback()
+            raise HTTPException(status_code=404, detail="machine not selected")
+        session.commit()
 
 
 @router.delete("/profile/machines")
 def remove_my_machines(payload: dict[str, Any], user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    removed, missing = athlete_machines.remove(session, _profile(session, user), _ids(payload))
-    session.commit()
+    ids = _ids(payload)
+    profile_id = _profile(session, user).id
+    with athlete_machines.profile_lock(profile_id):
+        removed, missing = athlete_machines.remove(session, _locked_profile(session, profile_id), ids)
+        session.commit()
     return _result(removed, missing)
 
 
@@ -130,12 +154,13 @@ def delete_gym_machines(gym_id: str, payload: dict[str, Any], user: User = Depen
         raise HTTPException(status_code=404, detail="gym not found")
     deleted, missing = [], []
     for machine_id in _ids(payload):
-        machine = gyms_service.get_machine(session, gym, machine_id)
-        if machine is None:
-            missing.append(machine_id)
-            continue
-        gyms_service.delete_machine(session, machine)
-        deleted.append(machine_id)
+        # Atomic per row: parallel bulk deletes never count a machine twice.
+        removed = (
+            session.query(GymMachine)
+            .filter_by(id=machine_id, gym_id=gym.id)
+            .delete(synchronize_session=False)
+        )
+        (deleted if removed else missing).append(machine_id)
     session.commit()
     return _result(deleted, missing)
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+import threading
+from collections import defaultdict
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator
 
 from sqlalchemy.orm import Session
 from syncfit_database import AthleteMachine, Profile
@@ -11,6 +14,20 @@ from . import gyms as gyms_service
 from .machines import list_machines
 
 CUSTOM_PREFIX = "custom-"
+
+# available_machines is a JSON list (read-modify-write). One lock per profile
+# serializes the edits inside this process; the endpoint also takes a row lock
+# (SELECT ... FOR UPDATE) for Postgres, so concurrent taps never lose one.
+_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+_locks_guard = threading.Lock()
+
+
+@contextmanager
+def profile_lock(profile_id: str) -> Iterator[None]:
+    with _locks_guard:
+        lock = _locks[profile_id]
+    with lock:
+        yield
 
 
 def _catalog_by_id(language: str) -> dict[str, dict[str, Any]]:
@@ -54,15 +71,13 @@ def add_catalog(session: Session, profile: Profile, ids: list[str]) -> list[str]
     return unknown
 
 
-def add_typed(
-    session: Session,
-    profile: Profile,
-    name: str,
-    language: str,
-    infer: Callable[[str, Any, str], dict[str, Any]],
-) -> AthleteMachine:
-    """Create a machine from a typed name; the AI infers type and exercises (best effort)."""
-    info = infer(name, None, language) or {}
+def infer_typed(name: str, language: str, infer: Callable[[str, Any, str], dict[str, Any]]) -> dict[str, Any]:
+    """AI inference for a typed machine (slow; call it outside the profile lock)."""
+    return infer(name, None, language) or {}
+
+
+def add_typed(session: Session, profile: Profile, name: str, info: dict[str, Any]) -> AthleteMachine:
+    """Create a machine from a typed name with the inferred type and exercises."""
     row = AthleteMachine(
         profile_id=profile.id,
         name=gyms_service.build_i18n(name, info.get("name")),
@@ -96,4 +111,4 @@ def remove(session: Session, profile: Profile, ids: list[str]) -> tuple[list[str
     return removed, missing
 
 
-__all__ = ["CUSTOM_PREFIX", "add_catalog", "add_typed", "list_selected", "remove"]
+__all__ = ["CUSTOM_PREFIX", "add_catalog", "add_typed", "infer_typed", "list_selected", "profile_lock", "remove"]

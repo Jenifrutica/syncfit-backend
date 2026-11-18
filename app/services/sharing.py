@@ -52,11 +52,13 @@ def find_share(session: Session, token: str) -> ShareLink | None:
 
 
 def delete_share(session: Session, user: User, token: str) -> bool:
-    link = session.query(ShareLink).filter_by(token=token, owner_user_id=user.id).one_or_none()
-    if link is None:
-        return False
-    session.delete(link)
-    return True
+    """Atomic: two concurrent deletes of the same link report it deleted once."""
+    deleted = (
+        session.query(ShareLink)
+        .filter_by(token=token, owner_user_id=user.id)
+        .delete(synchronize_session=False)
+    )
+    return deleted > 0
 
 
 def serialize_link(link: ShareLink) -> dict:
