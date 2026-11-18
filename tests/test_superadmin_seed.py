@@ -40,3 +40,15 @@ def test_seed_leaves_a_correct_hash_alone():
     with get_database().session_scope() as s:
         ensure_superadmin(s)
         assert _root(s).password_hash == before
+
+
+def test_seed_never_undoes_a_password_the_super_admin_changed():
+    with get_database().session_scope() as s:
+        ensure_superadmin(s)
+        root = _root(s)
+        root.password_hash = hash_password(client_digest(EMAIL, "ChangedByReset1!"))
+    with get_database().session_scope() as s:
+        ensure_superadmin(s)  # a redeploy
+        root = _root(s)
+        assert verify_password(client_digest(EMAIL, "ChangedByReset1!"), root.password_hash)
+        root.password_hash = hash_password(client_digest(EMAIL, "rootsecret123"))  # restore for other tests

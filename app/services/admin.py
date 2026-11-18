@@ -41,8 +41,11 @@ def ensure_superadmin(session: Session) -> User | None:
         session.add(user)
     else:
         user.role = "SUPER_ADMIN"
-        if not verify_password(digest, user.password_hash):
-            # Accounts seeded before the digest existed (or after the secret was rotated).
+        # Only migrate a hash stored before the browser digest existed (it
+        # verifies with the plain env password). A password the super admin
+        # changed (e.g. through "forgot password") is theirs: never overwrite it
+        # on startup, or every deploy would undo the reset.
+        if not verify_password(digest, user.password_hash) and verify_password(password, user.password_hash):
             user.password_hash = hash_password(digest)
             user.token_version += 1
     session.flush()
