@@ -29,7 +29,8 @@ from .cycles import compute_timeline
 from .engine import engine_result
 from .gyms import available_equipment_keys, available_exercise_ids, station_index
 from .live import latest as latest_live
-from .loads import adjust_entries
+from . import readiness as readiness_service
+from .loads import adjust_entries, energy_factor
 from .machines import factor_for_exercise
 from .ordering import order_entries
 from .options import capture_default_groups
@@ -129,6 +130,7 @@ def capture(
     energy_level: str | None = None,
     include_warmup: bool = True,
     use_live: bool = True,
+    sensor_readings: "readiness_service.Readings | None" = None,
 ) -> dict:
     """Run the simulated capture and persist session, telemetry and routine."""
     timeline = compute_timeline(profile) if profile is not None else None
@@ -159,6 +161,19 @@ def capture(
     core = engine_result(frame)
     groups = muscle_groups or capture_default_groups(session)
     energy = energy_level or _latest_energy(session, user.id)
+
+    # Today's pulse, push and temperature vs. the athlete's own references.
+    # The check-in values win; otherwise the device frame's live values.
+    readings = sensor_readings
+    if readings is None or not readings.any():
+        bio = frame.get("biomarkers") or {}
+        readings = readiness_service.Readings.clean(
+            heart_rate_bpm=bio.get("heart_rate_bpm") if bio.get("finger_present") else None,
+            peak_force_kg=bio.get("force_kg"),
+            temperature_c=bio.get("object_temperature_c"),
+            source="device" if live is not None else "simulated",
+        )
+    readiness = readiness_service.evaluate(session, user, readings, phase, language)
 
     # Machines of the athlete's active gym: prefer exercises they cover.
     station_map, preferred = ({}, set())
@@ -217,7 +232,9 @@ def capture(
         "articular_risk_pct": _articular_risk(core),
         "contraindicated_patterns": contraindicated,
         "symptom_context": context_payload,
-        "notes": [],
+        # Sensors are first-class input: the model must respect these limits.
+        "sensor_readiness": readiness.as_dict(core.k_load, energy_factor(energy), language),
+        "notes": list(readiness.reasons),
         "source": "core",
     }
 
@@ -248,7 +265,7 @@ def capture(
             gym_machines=gym_machines,
             assessment=assessment,
             symptom_context=context_payload,
-            impact_cap=symptom_context.impact_cap,
+            impact_cap=readiness_service.stricter_impact(symptom_context.impact_cap, readiness.impact_cap),
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
@@ -262,7 +279,7 @@ def capture(
             gym_machines=gym_machines,
             assessment=assessment,
             symptom_context=context_payload,
-            impact_cap=symptom_context.impact_cap,
+            impact_cap=readiness_service.stricter_impact(symptom_context.impact_cap, readiness.impact_cap),
             equipment_keys=None if equipment is None else list(equipment),
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
@@ -287,7 +304,12 @@ def capture(
     ordered = _annotate_machines(ordered, station_map)
     warmup = _annotate_machines(warmup, station_map)
 
-    # Apply the athlete's baseline loads, adjusted per available machine.
+    # Pulse / temperature: fewer working sets and longer rests when needed.
+    ordered = readiness_service.apply_to_entries(ordered, readiness)
+
+    # Apply the athlete's baseline loads, scaled by today's sensors and
+    # adjusted per available machine.
+    load_multiplier_today = readiness.load_multiplier(core.k_load, energy_factor(energy))
     if profile is not None and profile.loads:
         available = list(profile.available_machines or [])
         factors: dict[str, float] = {}
@@ -299,8 +321,10 @@ def capture(
             factors[exercise_id] = (
                 station["weight_factor"] if station else factor_for_exercise(exercise_id, available)
             )
-        ordered = adjust_entries(ordered, profile.loads, core.k_load, energy, factors)
-        warmup = adjust_entries(warmup, profile.loads, core.k_load, energy, factors)
+        body_weight = profile.weight_kg
+        ordered = adjust_entries(ordered, profile.loads, core.k_load, energy, factors, multiplier=load_multiplier_today, body_weight_kg=body_weight)
+        warmup = adjust_entries(warmup, profile.loads, core.k_load, energy, factors, multiplier=load_multiplier_today, body_weight_kg=body_weight)
+    readiness_service.record(session, user, readings)
 
     record = SessionRecord(
         user_id=user.id,
@@ -366,7 +390,7 @@ def capture(
         entry.get("exercise_id"): list(entry.get("muscle_groups") or []) for entry in ordered
     }
 
-    alerts = list(symptom_context.advice) + list(symptom_alerts)
+    alerts = list(readiness.reasons) + list(symptom_context.advice) + list(symptom_alerts)
     if ordered:
         alerts.append(
             {
@@ -403,6 +427,7 @@ def capture(
         "engine_used": payload.get("engine_used", "deterministic"),
         "machine_preferences": machine_preferences,
         "biomarkers": dict(frame["biomarkers"]),
+        "readiness": readiness.as_dict(core.k_load, energy_factor(energy), language),
         "timeline": timeline,
         "total_estimated_minutes": payload.get("total_estimated_minutes"),
         "alerts": alerts,

@@ -49,6 +49,7 @@ from ..services.supplements import recommend
 from ..services import profiles_db
 from ..services import options as options_service
 from ..services import capture_jobs
+from ..services.readiness import Readings
 from ..services.validation import validate_document_id, validate_gym_name, validate_person_name
 
 router = APIRouter()
@@ -460,6 +461,11 @@ def take_data(
     include_warmup: bool = Query(default=True),
     use_live: bool = Query(default=True),
     request_id: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$"),
+    # Check-in values (pulse, peak push, eye temperature) and where they came from.
+    hr_bpm: float | None = Query(default=None),
+    force_kg: float | None = Query(default=None),
+    temp_c: float | None = Query(default=None),
+    sensor_source: str = Query(default="device", pattern="^(device|simulated)$"),
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -496,6 +502,7 @@ def take_data(
             energy_level=energy_level,
             include_warmup=include_warmup,
             use_live=use_live,
+            sensor_readings=Readings.clean(hr_bpm, force_kg, temp_c, sensor_source),
         )
         if job is not None:
             capture_jobs.finish(job, result)
