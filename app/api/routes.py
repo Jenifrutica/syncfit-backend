@@ -724,6 +724,8 @@ def _serialize_profile(profile) -> dict[str, Any]:
         "last_period_date": profile.last_period_date.isoformat() if profile.last_period_date else None,
         "cycle_length_days": profile.cycle_length_days,
         "gestation_week": profile.gestation_week,
+        "weekly_training_goal": profile.weekly_training_goal,
+        "rest_days_allowance": profile.rest_days_allowance,
         "due_date": profile.due_date.isoformat() if profile.due_date else None,
         "loads": [
             {"exercise_id": load.exercise_id, "weight_kg": load.weight_kg, "reps": load.reps}

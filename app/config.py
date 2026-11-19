@@ -63,6 +63,8 @@ class Settings:
     # Evaluation accounts with made-up addresses: "forgot password" shows the
     # reset form on screen (simulated email) instead of sending one.
     demo_simulated_emails: tuple[str, ...] = ()
+    # Calendar day for streaks and weekly stats (IANA name). Colombia by default.
+    app_timezone: str = "America/Bogota"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -112,6 +114,7 @@ class Settings:
                 for e in os.environ.get("DEMO_SIMULATED_EMAILS", "asgardcito@asgard.com,nicolasa@syncfit.dev").split(",")
                 if e.strip()
             ),
+            app_timezone=os.environ.get("APP_TIMEZONE", "America/Bogota"),
             cors_origin_regex=os.environ.get(
                 "BACKEND_CORS_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
             ),

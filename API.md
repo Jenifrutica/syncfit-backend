@@ -130,7 +130,7 @@ localStorage.setItem("syncfit_token", access_token);
 | POST | `/capture?language=&muscle_groups=&exercises_count=&time_budget_minutes=&energy_level=&include_warmup=` | auth | Full capture → **validated routine**. |
 | POST | `/routines?engine=simulator\|ai&profile_id=` | public | Generate a routine directly. |
 | GET | `/routine/latest` | auth | Latest stored routine. |
-| GET | `/stats` | auth | Streak / weekly training stats. |
+| GET | `/stats` | auth | Streak / weekly training stats. Days are counted in `APP_TIMEZONE` (default `America/Bogota`). |
 | GET | `/options?language=` | public | Selectable values read from the database: `muscle_group_isolated`, `muscle_group_general`, `objective`, `goal_phase`; each item is `{value, label, labels}`. |
 | GET | `/stats/biomarkers` | auth | Min / max / mean of a biomarker over `from`..`to` (default last 28 days) with 7-day windows. `metric`: `rmssd_hrv_ms`, `delta_temperature_c`, `isometric_force_loss_pct`. |
 
