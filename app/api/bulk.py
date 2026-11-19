@@ -24,7 +24,8 @@ from ..services import athlete_machines
 from ..services import gyms as gyms_service
 from ..services import options as options_service
 from ..services import profiles_db
-from ..services.auth import current_user, require_super_admin, verify_password
+from ..services.auth import verify_password
+from .deps import current_user, require_super_admin
 from ..services.catalog_db import KINDS, load_registry, set_active
 from ..services.sharing import delete_share
 

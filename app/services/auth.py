@@ -1,4 +1,4 @@
-"""Authentication: password hashing, JWT tokens and the current-user dependency."""
+"""Authentication and credential use cases, independent of HTTP."""
 
 from __future__ import annotations
 
@@ -9,20 +9,33 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from syncfit_database import User
 
 from ..config import settings
-from ..db import get_session
+from .validation import validate_document_id, validate_person_name
 
 ALGORITHM = "HS256"
 _LEGACY_PREFIX = "pbkdf2_sha256$"
 
 _ph = PasswordHasher()
 _DUMMY_HASH = _ph.hash("dummy-password")
-_bearer = HTTPBearer(auto_error=False)
+
+
+class InvalidCredentials(Exception):
+    """A login, token, or password check failed."""
+
+
+class AccountInactive(Exception):
+    """The account cannot authenticate because it is deactivated."""
+
+
+class InvalidAccountData(Exception):
+    """The account inputs do not satisfy application rules."""
+
+
+class RegistrationConflict(Exception):
+    """An account already uses the requested email or document."""
 
 
 def hash_password(password: str) -> str:
@@ -93,47 +106,82 @@ def decode_token(token: str) -> dict:
     )
 
 
-def current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    session: Session = Depends(get_session),
-) -> User:
-    if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+def authenticate_token(session: Session, token: str) -> User:
     try:
-        payload = decode_token(credentials.credentials)
+        payload = decode_token(token)
     except jwt.PyJWTError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        ) from exc
+        raise InvalidCredentials("Invalid token") from exc
     user = session.get(User, payload["sub"])
     if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    if not hmac.compare_digest(payload["pwv"], _password_fingerprint(user)):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
-    if payload["tv"] != _token_version(user):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+        raise InvalidCredentials("User not found")
+    fingerprint = payload["pwv"]
+    if not isinstance(fingerprint, str) or not fingerprint.isascii():
+        raise InvalidCredentials("Invalid token")
+    if not hmac.compare_digest(fingerprint, _password_fingerprint(user)) or payload["tv"] != _token_version(user):
+        raise InvalidCredentials("Token revoked")
     if getattr(user, "active", True) is False:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
+        raise AccountInactive("Account deactivated")
     return user
 
 
-def require_super_admin(user: User = Depends(current_user)) -> User:
-    if getattr(user, "role", None) != "SUPER_ADMIN":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin required")
+def register_user(session: Session, *, email: str, password: str, display_name: str, document_id: str) -> User:
+    email = email.lower()
+    try:
+        display_name = validate_person_name(display_name)
+        document_id = validate_document_id(document_id)
+    except ValueError as exc:
+        raise InvalidAccountData(str(exc)) from exc
+    if session.query(User).filter_by(email=email).one_or_none() is not None:
+        raise RegistrationConflict("email already registered")
+    if session.query(User).filter_by(document_id=document_id).one_or_none() is not None:
+        raise RegistrationConflict("document_id already registered")
+    user = User(email=email, password_hash=hash_password(password), display_name=display_name, document_id=document_id)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
     return user
 
 
-def require_gym_admin(user: User = Depends(current_user)) -> User:
-    # Gym creation/management belongs to gym admins only; the super admin is a
-    # purely administrative role and cannot create gyms or machines.
-    if getattr(user, "role", None) != "GYM_ADMIN":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gym admin required")
+def authenticate_password(session: Session, email: str, password: str) -> User:
+    user = session.query(User).filter_by(email=email.strip().lower()).one_or_none()
+    if user is None:
+        spend_password_check(password)
+        raise InvalidCredentials("invalid credentials")
+    if not verify_password(password, user.password_hash):
+        raise InvalidCredentials("invalid credentials")
+    if getattr(user, "active", True) is False:
+        raise AccountInactive("account deactivated")
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(password)
+        session.commit()
     return user
+
+
+def logout_user(session: Session, user: User) -> None:
+    revoke_tokens(user)
+    session.commit()
+
+
+def change_user_password(session: Session, user: User, current_password: str, new_password: str) -> None:
+    if not verify_password(current_password, user.password_hash):
+        raise InvalidCredentials("invalid credentials")
+    if new_password == current_password:
+        raise InvalidAccountData("new password must differ from the current one")
+    user.password_hash = hash_password(new_password)
+    session.commit()
+    session.refresh(user)
 
 
 __all__ = [
-    "require_super_admin",
-    "require_gym_admin",
+    "InvalidCredentials",
+    "AccountInactive",
+    "InvalidAccountData",
+    "RegistrationConflict",
+    "authenticate_token",
+    "authenticate_password",
+    "register_user",
+    "logout_user",
+    "change_user_password",
     "hash_password",
     "verify_password",
     "needs_rehash",
@@ -141,5 +189,4 @@ __all__ = [
     "create_access_token",
     "revoke_tokens",
     "decode_token",
-    "current_user",
 ]

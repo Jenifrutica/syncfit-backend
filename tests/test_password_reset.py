@@ -56,7 +56,7 @@ def test_full_reset_flow(monkeypatch):
     _register()
     sent: list[dict] = []
     monkeypatch.setattr(
-        auth_module.mailer,
+        auth_module.accounts.mailer,
         "send_password_reset",
         lambda **kwargs: sent.append(kwargs),
     )
@@ -97,7 +97,7 @@ def test_full_reset_flow(monkeypatch):
 
 def test_forgot_does_not_reveal_unknown_accounts(monkeypatch):
     sent: list[dict] = []
-    monkeypatch.setattr(auth_module.mailer, "send_password_reset", lambda **kwargs: sent.append(kwargs))
+    monkeypatch.setattr(auth_module.accounts.mailer, "send_password_reset", lambda **kwargs: sent.append(kwargs))
     _configure(monkeypatch, smtp_host="smtp.test", smtp_from="no-reply@test.dev")
     response = client.post("/api/v1/auth/forgot", json={"email": "nadie@example.com"})
     assert response.status_code == 202
@@ -110,7 +110,7 @@ def test_forgot_stays_generic_when_delivery_fails(monkeypatch):
     def boom(**_kwargs):
         raise RuntimeError("smtp down")
 
-    monkeypatch.setattr(auth_module.mailer, "send_password_reset", boom)
+    monkeypatch.setattr(auth_module.accounts.mailer, "send_password_reset", boom)
     _configure(monkeypatch, smtp_host="smtp.test", smtp_from="no-reply@test.dev")
     response = client.post("/api/v1/auth/forgot", json={"email": EMAIL})
     assert response.status_code == 202
@@ -125,7 +125,7 @@ def test_forgot_requires_a_configured_mailer(monkeypatch):
 def test_issuing_a_new_token_invalidates_the_previous_one(monkeypatch):
     _register()
     sent: list[dict] = []
-    monkeypatch.setattr(auth_module.mailer, "send_password_reset", lambda **kwargs: sent.append(kwargs))
+    monkeypatch.setattr(auth_module.accounts.mailer, "send_password_reset", lambda **kwargs: sent.append(kwargs))
     _configure(monkeypatch, smtp_host="smtp.test", smtp_from="no-reply@test.dev")
 
     client.post("/api/v1/auth/forgot", json={"email": EMAIL})
@@ -190,7 +190,7 @@ def test_simulated_forgot_shows_the_link_for_demo_addresses(monkeypatch):
     _register()
     _configure(monkeypatch, demo_login_enabled=True, demo_simulated_emails=(EMAIL,))
     sent: list = []
-    monkeypatch.setattr(auth_module.mailer, "send_password_reset", lambda **kw: sent.append(kw))
+    monkeypatch.setattr(auth_module.accounts.mailer, "send_password_reset", lambda **kw: sent.append(kw))
     response = client.post("/api/v1/auth/forgot/simulated", json={"email": EMAIL.upper()})
     assert response.status_code == 200, response.text
     body = response.json()
