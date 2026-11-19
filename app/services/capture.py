@@ -36,7 +36,7 @@ from .ordering import order_entries
 from .options import capture_default_groups
 from .symptom_policy import build_symptom_context, fallback_patterns, hard_patterns
 from .symptoms import apply_symptoms
-from .routines import generate_routine
+from .routines import RoutineProviderUnavailable, generate_routine
 
 
 _ALERT_LABELS = {
@@ -270,7 +270,7 @@ def capture(
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
         )
-    except Exception:
+    except RoutineProviderUnavailable:
         payload = generate_routine(
             request,
             engine="deterministic",
