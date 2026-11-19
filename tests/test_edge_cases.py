@@ -55,3 +55,8 @@ def test_a_share_can_only_be_revoked_by_its_owner():
     assert client.delete(f"/api/v1/shares/{share['token']}", headers=_auth(other)).status_code == 404
     assert client.get(f"/api/v1/shared/{share['token']}").status_code == 200
     assert client.get("/api/v1/shared/sh_does-not-exist").status_code == 404
+
+
+def test_removing_a_machine_that_is_not_mine_is_404():
+    token = _register("edge-machine@example.com")
+    assert client.delete("/api/v1/profile/machines/not-a-machine", headers=_auth(token)).status_code == 404
