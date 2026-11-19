@@ -245,5 +245,12 @@ hardware/simulator → syncfit-core (DSP + RandomForest → biomarkers + k_load)
 - Dates: ISO `YYYY-MM-DD`. Images: compressed data URLs.
 - `blocked` exercises carry `block_reason` and `substitute`.
 - `machine_preferences` maps `movement_pattern → chosen gym machine`.
+- Answers the frontend can count on (covered by `tests/test_edge_cases.py`):
+  - missing or malformed token → `401`;
+  - unknown energy level in `POST /energy` → `422`;
+  - unknown gym code in `POST /gyms/join` or `GET /gyms/{code}` → `404`; an athlete creating a gym → `403`;
+  - revoking someone else's share → `404` (the link keeps working); unknown `GET /shared/{token}` → `404`;
+  - removing a machine the athlete never chose → `404`;
+  - `GET /routine/latest` before the first routine → `404`.
 
 For the per-module/function reference see [`docs/FUNCTIONS.md`](./docs/FUNCTIONS.md).
