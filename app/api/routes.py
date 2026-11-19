@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import ValidationError
@@ -960,7 +961,8 @@ def gym_qr(gym_id: str, user: User = Depends(current_user), session: Session = D
         import qrcode
     except ImportError:
         raise HTTPException(status_code=503, detail="qrcode not installed")
-    img = qrcode.make(gym.code)
+    invitation = urlencode({"codigo": gym.code})
+    img = qrcode.make(f"{settings.app_base_url}/entrar/?{invitation}")
     buffer = io.BytesIO(); img.save(buffer, format="PNG")
     return Response(content=buffer.getvalue(), media_type="image/png")
 
