@@ -63,7 +63,7 @@ def _ensure_known_options(session: Session, **values: Any) -> None:
     for category, value in values.items():
         if value in (None, ""):
             continue
-        allowed = options_service.active_values(session, category) or options_service.default_values(category)
+        allowed = options_service.active_values(session, category)
         if str(value) not in allowed:
             raise HTTPException(status_code=422, detail=f"unknown {category}: {value}")
 
@@ -459,6 +459,10 @@ def take_data(
 ) -> dict[str, Any]:
     profile = profiles_db.get_profile(session, user)
     groups = [g.strip() for g in muscle_groups.split(",")] if muscle_groups else None
+    if groups is None:
+        groups = options_service.capture_default_groups(session)
+        if not groups:
+            raise HTTPException(status_code=422, detail="no active muscle groups configured")
     _ensure_known_groups(groups, session)
 
     job = None

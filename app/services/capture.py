@@ -32,11 +32,11 @@ from .live import latest as latest_live
 from .loads import adjust_entries
 from .machines import factor_for_exercise
 from .ordering import order_entries
+from .options import capture_default_groups
 from .symptom_policy import build_symptom_context, fallback_patterns, hard_patterns
 from .symptoms import apply_symptoms
 from .routines import generate_routine
 
-DEFAULT_GROUPS = ["LOWER_BODY", "UPPER_BODY", "CORE"]
 
 _ALERT_LABELS = {
     "EN": {"notes": "Notes", "pain": "Pain"},
@@ -157,7 +157,7 @@ def capture(
             window_size=256,
         )
     core = engine_result(frame)
-    groups = muscle_groups or DEFAULT_GROUPS
+    groups = muscle_groups or capture_default_groups(session)
     energy = energy_level or _latest_energy(session, user.id)
 
     # Machines of the athlete's active gym: prefer exercises they cover.
@@ -440,4 +440,4 @@ def capture(
     }
 
 
-__all__ = ["capture", "DEFAULT_GROUPS"]
+__all__ = ["capture"]

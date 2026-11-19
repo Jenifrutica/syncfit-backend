@@ -24,8 +24,12 @@ def list_muscle_groups(session: Session | None = None) -> list[str]:
         .order_by(AppOption.sort_order, AppOption.value)
         .all()
     )
-    values = [value for (value,) in rows]
-    return values or [group.value for group in MuscleGroup]
+    if rows:
+        return [value for (value,) in rows]
+    configured = session.query(AppOption.id).filter(
+        AppOption.category.in_((ISOLATED, GENERAL))
+    ).first()
+    return [] if configured else [group.value for group in MuscleGroup]
 
 
 def get_catalog(language: str = "EN") -> list[dict[str, Any]]:
