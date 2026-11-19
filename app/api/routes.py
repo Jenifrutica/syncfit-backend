@@ -19,7 +19,8 @@ from ..db import get_session
 from ..rate_limit import limiter
 from ..services import profiles
 from ..services.alerts import dispatch_alerts
-from ..services.auth import current_user, require_gym_admin, require_super_admin, verify_password
+from ..services.auth import verify_password
+from .deps import current_user, require_gym_admin, require_super_admin
 from ..services import admin as admin_service
 from ..services.capture import capture
 from ..services.catalog import get_catalog, list_muscle_groups
