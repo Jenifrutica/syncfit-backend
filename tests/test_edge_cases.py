@@ -44,3 +44,14 @@ def test_unknown_gym_code_is_404_and_athletes_cannot_create_gyms():
     assert client.post("/api/v1/gyms/join", json={"code": "ZZ9999"}, headers=_auth(token)).status_code == 404
     assert client.get("/api/v1/gyms/ZZ9999", headers=_auth(token)).status_code == 404
     assert client.post("/api/v1/gyms", json={"name": "Mine"}, headers=_auth(token)).status_code == 403
+
+
+def test_a_share_can_only_be_revoked_by_its_owner():
+    owner = _register("edge-share-owner@example.com")
+    other = _register("edge-share-other@example.com")
+    share = client.post(
+        "/api/v1/shares", json={"role": "TRAINER", "permissions": ["PROFILE"]}, headers=_auth(owner)
+    ).json()
+    assert client.delete(f"/api/v1/shares/{share['token']}", headers=_auth(other)).status_code == 404
+    assert client.get(f"/api/v1/shared/{share['token']}").status_code == 200
+    assert client.get("/api/v1/shared/sh_does-not-exist").status_code == 404
