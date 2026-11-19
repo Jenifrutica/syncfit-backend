@@ -529,3 +529,15 @@ def test_logout_does_not_affect_other_users():
 
 def test_logout_requires_authentication():
     assert client.post("/api/v1/auth/logout").status_code == 401
+
+
+def test_profile_returns_weekly_goal_and_rest_days():
+    token = _register("flow-goal@example.com")
+    client.put(
+        "/api/v1/profile",
+        json={"modality": "MENSTRUAL_CYCLE", "weekly_training_goal": 5, "rest_days_allowance": 2},
+        headers=_auth(token),
+    )
+    me = client.get("/api/v1/profile", headers=_auth(token)).json()
+    assert me["weekly_training_goal"] == 5
+    assert me["rest_days_allowance"] == 2
