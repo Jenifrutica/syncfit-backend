@@ -8,6 +8,7 @@ everything in the database.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -37,6 +38,8 @@ from .options import capture_default_groups
 from .symptom_policy import build_symptom_context, fallback_patterns, hard_patterns
 from .symptoms import apply_symptoms
 from .routines import generate_routine
+
+logger = logging.getLogger(__name__)
 
 
 _ALERT_LABELS = {
@@ -270,7 +273,8 @@ def capture(
             available_exercise_ids=list(allowed_ids),
             symptom_notes=symptom_notes,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("Capture routine engine %s failed (%s); using deterministic fallback", engine, type(exc).__name__)
         payload = generate_routine(
             request,
             engine="deterministic",

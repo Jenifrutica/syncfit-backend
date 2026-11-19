@@ -8,7 +8,6 @@ from syncfit_database import (
     CycleLog,
     EnergyCheckIn,
     Gym,
-    GymMembership,
     Profile,
     Routine,
     SessionRecord,
@@ -18,6 +17,7 @@ from syncfit_database import (
 )
 
 from ..config import settings
+from . import gyms
 from .auth import hash_password, verify_password
 from .credentials import client_digest
 
@@ -130,9 +130,8 @@ def set_role(session: Session, user: User, role: str) -> User:
 def delete_user(session: Session, user: User) -> None:
     """Hard delete a user and all their data (ordered to satisfy FK constraints)."""
     profile_ids = [p.id for p in session.query(Profile).filter_by(user_id=user.id).all()]
-    for gym in session.query(Gym).filter_by(owner_user_id=user.id).all():
-        session.query(GymMembership).filter_by(gym_id=gym.id).delete()
-        session.delete(gym)  # cascades machines
+    for gym in session.query(Gym).filter_by(owner_user_id=user.id).order_by(Gym.id).with_for_update():
+        gyms.delete_gym(session, gym)
     for routine in session.query(Routine).filter_by(user_id=user.id).all():
         session.delete(routine)  # cascades routine_exercises
     for record in session.query(SessionRecord).filter_by(user_id=user.id).all():

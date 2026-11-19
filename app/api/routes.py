@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from typing import Any
 
@@ -53,6 +54,7 @@ from ..services.readiness import Readings
 from ..services.validation import validate_document_id, validate_gym_name, validate_person_name
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _ensure_known_options(session: Session, **values: Any) -> None:
@@ -488,8 +490,8 @@ def take_data(
         if state == "pending":
             raise HTTPException(status_code=409, detail={"status": "pending", "request_id": request_id})
 
-    options_service.sync_engine_options(session)
     try:
+        options_service.sync_engine_options(session)
         result = capture(
             session,
             user,
@@ -509,7 +511,10 @@ def take_data(
         session.commit()
     except Exception as exc:
         if request_id:
-            capture_jobs.fail(session, request_id, str(exc) or exc.__class__.__name__)
+            try:
+                capture_jobs.fail(session, request_id, str(exc) or exc.__class__.__name__)
+            except Exception as status_error:
+                logger.error("Could not record capture failure (%s)", type(status_error).__name__)
         raise
     return result
 
@@ -773,7 +778,7 @@ def update_gym(gym_id: str, payload: dict[str, Any], language: str = Query(defau
 
 @router.delete("/gyms/{gym_id}", status_code=204)
 def delete_gym(gym_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
-    gym = gyms_service.get_by_id(session, gym_id)
+    gym = gyms_service.get_by_id(session, gym_id, lock=True)
     if gym is None or gym.owner_user_id != user.id:
         raise HTTPException(status_code=404, detail="gym not found")
     gyms_service.delete_gym(session, gym)
@@ -802,6 +807,21 @@ def joined_gyms(language: str = Query(default="EN"), user: User = Depends(curren
     if profile is None:
         return []
     return gyms_service.joined_gyms(session, profile, language)
+
+
+@router.get("/gyms/notices")
+def gym_deletion_notices(user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, str]]:
+    profile = profiles_db.get_profile(session, user)
+    return gyms_service.deletion_notices(session, profile) if profile is not None else []
+
+
+@router.delete("/gyms/notices/{notice_id}", status_code=204)
+def dismiss_gym_deletion_notice(notice_id: str, user: User = Depends(current_user), session: Session = Depends(get_session)) -> Response:
+    profile = profiles_db.get_profile(session, user)
+    if profile is not None:
+        gyms_service.dismiss_deletion_notice(session, profile, notice_id)
+        session.commit()
+    return Response(status_code=204)
 
 
 @router.post("/gyms/{gym_id}/machines")
@@ -895,7 +915,7 @@ def get_gym(code: str, language: str = Query(default="EN"), session: Session = D
 
 @router.post("/gyms/join")
 def join_gym(payload: dict[str, Any], language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    gym = gyms_service.get_by_code(session, str(payload.get("code", "")))
+    gym = gyms_service.get_by_code(session, str(payload.get("code", "")), lock=True)
     if gym is None:
         raise HTTPException(status_code=404, detail="gym not found")
     profile = profiles_db.get_profile(session, user)
@@ -924,7 +944,7 @@ def activate_gym(gym_id: str, language: str = Query(default="EN"), user: User = 
     profile = profiles_db.get_profile(session, user)
     if profile is None:
         raise HTTPException(status_code=404, detail="profile not set up")
-    if not gyms_service.set_active_gym(session, profile, gym_id):
+    if gyms_service.get_by_id(session, gym_id, lock=True) is None or not gyms_service.set_active_gym(session, profile, gym_id):
         raise HTTPException(status_code=404, detail="gym not joined")
     session.commit()
     gym = gyms_service.get_by_id(session, gym_id)

@@ -7,6 +7,7 @@ configured. Baseline loads from the athlete profile are applied in both paths.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Iterable
 
 from syncfit_contracts import RoutineRequest, RoutineResponse
@@ -19,6 +20,7 @@ from .engine import engine_result
 from .loads import adjust_entries, variation_pct
 
 DEFAULT_EXERCISES_PER_GROUP = 2
+logger = logging.getLogger(__name__)
 
 
 def _value(item: object) -> str:
@@ -127,8 +129,8 @@ def generate_routine(
             validated = RoutineResponse.model_validate(payload).model_dump(mode="json")
             validated["variation_pct"] = variation_pct(k_load, request.energy_level)
             return validated
-        except Exception:
-            pass  # fall through to the simulator builder
+        except Exception as exc:
+            logger.warning("Deterministic routine failed (%s); using simulator", type(exc).__name__)
 
     payload = build_routine(
         groups,

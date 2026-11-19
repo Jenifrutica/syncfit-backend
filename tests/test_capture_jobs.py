@@ -4,6 +4,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 from syncfit_database import CaptureJob, Routine, User
 
@@ -91,6 +92,21 @@ def test_failed_generation_is_marked_and_can_be_retried(monkeypatch):
     assert _routines(h) == 0  # nothing half-saved
     retry = _capture(h, rid)
     assert retry.status_code == 200 and calls["n"] == 2
+
+
+def test_failure_recording_does_not_hide_the_original_capture_error(monkeypatch):
+    headers = _athlete()
+
+    def capture_error(*args, **kwargs):
+        raise RuntimeError("engine down")
+
+    def status_error(*args, **kwargs):
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(routes_module, "capture", capture_error)
+    monkeypatch.setattr(routes_module.capture_jobs, "fail", status_error)
+    with pytest.raises(RuntimeError, match="engine down"):
+        _capture(headers, _rid())
 
 
 def test_two_simultaneous_taps_create_one_routine():
