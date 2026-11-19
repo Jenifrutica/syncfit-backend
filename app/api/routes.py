@@ -54,7 +54,8 @@ from ..services import profiles_db
 from ..services import options as options_service
 from ..services import capture_jobs
 from ..services.readiness import Readings
-from ..services.validation import validate_document_id, validate_gym_name, validate_person_name
+from ..services.auth import InvalidAccountData, RegistrationConflict
+from ..services.validation import validate_gym_name
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -972,23 +973,13 @@ def gym_qr(gym_id: str, user: User = Depends(current_user), session: Session = D
 
 @router.post("/admin/gym-admins", status_code=201)
 def admin_create_gym_admin(payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
-    email = str(payload.get("email", "")).strip()
-    password = str(payload.get("password", ""))
     try:
-        name = validate_person_name(payload.get("display_name", "Gym Admin"))
-        document_id = payload.get("document_id")
-        document_id = validate_document_id(document_id) if document_id else None
-    except ValueError as exc:
+        result = admin_service.provision_gym_admin(session, payload)
+    except InvalidAccountData as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if "@" not in email or not 8 <= len(password) <= 128:
-        raise HTTPException(status_code=422, detail="email and password (8-128 chars) required")
-    if session.query(User).filter_by(email=email.lower()).one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="email already registered")
-    if document_id and session.query(User).filter_by(document_id=document_id).one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="document_id already registered")
-    created = admin_service.create_gym_admin(session, email, password, name, document_id)
-    session.commit(); session.refresh(created)
-    return admin_service.serialize_user(created)
+    except RegistrationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return admin_service.serialize_user(result)
 
 
 @router.get("/admin/gym-admins")
@@ -1042,31 +1033,13 @@ def admin_get_user(user_id: str, user: User = Depends(require_super_admin), sess
 @router.patch("/admin/users/{user_id}")
 def admin_update_user(user_id: str, payload: dict[str, Any], user: User = Depends(require_super_admin), session: Session = Depends(get_session)) -> dict[str, Any]:
     target = _target_user(session, user_id)
-    data: dict[str, Any] = {}
-    if "display_name" in payload:
-        try:
-            data["display_name"] = validate_person_name(payload.get("display_name", ""))
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if "email" in payload:
-        email = str(payload.get("email", "")).strip().lower()
-        if "@" not in email:
-            raise HTTPException(status_code=422, detail="invalid email")
-        if session.query(User).filter(User.email == email, User.id != target.id).one_or_none() is not None:
-            raise HTTPException(status_code=409, detail="email already registered")
-        data["email"] = email
-    if "document_id" in payload:
-        document = payload.get("document_id")
-        try:
-            document = validate_document_id(document) if document else None
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        if document and session.query(User).filter(User.document_id == document, User.id != target.id).one_or_none() is not None:
-            raise HTTPException(status_code=409, detail="document_id already registered")
-        data["document_id"] = document
-    admin_service.update_user(session, target, data)
-    session.commit(); session.refresh(target)
-    return admin_service.serialize_user(target)
+    try:
+        result = admin_service.edit_user_identity(session, target, payload)
+    except InvalidAccountData as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RegistrationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return admin_service.serialize_user(result)
 
 
 @router.post("/admin/users/{user_id}/deactivate")

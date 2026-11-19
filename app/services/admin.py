@@ -18,7 +18,8 @@ from syncfit_database import (
 
 from ..config import settings
 from . import gyms
-from .auth import hash_password, verify_password
+from .auth import InvalidAccountData, hash_password, identity_transaction, verify_password
+from .validation import validate_document_id, validate_person_name
 from .credentials import client_digest
 
 
@@ -64,6 +65,43 @@ def create_gym_admin(
     )
     session.add(user)
     session.flush()
+    return user
+
+
+def provision_gym_admin(session: Session, payload: dict) -> User:
+    email = str(payload.get("email", "")).strip().lower()
+    password = str(payload.get("password", ""))
+    try:
+        name = validate_person_name(payload.get("display_name", "Gym Admin"))
+        document = validate_document_id(payload["document_id"]) if payload.get("document_id") else None
+    except ValueError as exc:
+        raise InvalidAccountData(str(exc)) from exc
+    if "@" not in email or not 8 <= len(password) <= 128:
+        raise InvalidAccountData("email and password (8-128 chars) required")
+    with identity_transaction(session, email, document):
+        user = create_gym_admin(session, email, password, name, document)
+    session.refresh(user)
+    return user
+
+
+def edit_user_identity(session: Session, user: User, payload: dict) -> User:
+    data = {}
+    try:
+        if "display_name" in payload:
+            data["display_name"] = validate_person_name(payload["display_name"])
+        if "document_id" in payload:
+            document = payload["document_id"]
+            data["document_id"] = validate_document_id(document) if document else None
+    except ValueError as exc:
+        raise InvalidAccountData(str(exc)) from exc
+    if "email" in payload:
+        email = str(payload["email"]).strip().lower()
+        if "@" not in email:
+            raise InvalidAccountData("invalid email")
+        data["email"] = email
+    with identity_transaction(session, data.get("email"), data.get("document_id"), user.id):
+        update_user(session, user, data)
+    session.refresh(user)
     return user
 
 
