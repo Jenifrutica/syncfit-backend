@@ -25,6 +25,11 @@ def test_no_shortfall_when_complete_or_empty():
 
 
 def test_capture_explains_a_short_routine_for_a_narrow_group():
+    from app.db import get_database
+    from app.services.options import ensure_default_options
+
+    with get_database().session_scope() as s:
+        ensure_default_options(s)  # localized group names ("Gemelos")
     h = _athlete()
     families = _family_count(["CALVES"])
     assert families < 8
