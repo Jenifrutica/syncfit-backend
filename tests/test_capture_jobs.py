@@ -2,14 +2,18 @@
 
 import threading
 import uuid
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 from syncfit_database import CaptureJob, Routine, User
 
 from app.api import routes as routes_module
 from app.db import get_database
 from app.main import app
+from app.services import capture as capture_module
+from app.services.routines import RoutineProviderUnavailable
 from tests.test_bulk import _athlete
 
 client = TestClient(app)
@@ -91,6 +95,33 @@ def test_failed_generation_is_marked_and_can_be_retried(monkeypatch):
     assert _routines(h) == 0  # nothing half-saved
     retry = _capture(h, rid)
     assert retry.status_code == 200 and calls["n"] == 2
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_engines", "status_code"),
+    [
+        (RoutineProviderUnavailable("provider down"), ["ai", "deterministic"], 200),
+        (TypeError("internal bug"), ["ai"], 500),
+    ],
+)
+def test_capture_retries_only_provider_failures(monkeypatch, error, expected_engines, status_code):
+    monkeypatch.setattr(capture_module, "settings", replace(capture_module.settings, routine_engine="ai"))
+    real = capture_module.generate_routine
+    engines = []
+
+    def generator(request, *, engine, **kwargs):
+        engines.append(engine)
+        if engine == "ai":
+            raise error
+        return real(request, engine=engine, **kwargs)
+
+    monkeypatch.setattr(capture_module, "generate_routine", generator)
+    failing = TestClient(app, raise_server_exceptions=False)
+    response = failing.post(
+        "/api/v1/capture", params={"muscle_groups": "GLUTES"}, headers=_athlete()
+    )
+    assert response.status_code == status_code, response.text
+    assert engines == expected_engines
 
 
 def test_two_simultaneous_taps_create_one_routine():
