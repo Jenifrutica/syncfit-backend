@@ -60,3 +60,8 @@ def test_a_share_can_only_be_revoked_by_its_owner():
 def test_removing_a_machine_that_is_not_mine_is_404():
     token = _register("edge-machine@example.com")
     assert client.delete("/api/v1/profile/machines/not-a-machine", headers=_auth(token)).status_code == 404
+
+
+def test_latest_routine_is_404_before_the_first_one():
+    token = _register("edge-routine@example.com")
+    assert client.get("/api/v1/routine/latest", headers=_auth(token)).status_code == 404
