@@ -80,6 +80,104 @@ def _annotate_machines(
     return annotated
 
 
+_SHORT_TEXT = {
+    "title": {
+        "es": "Pediste {req} ejercicios y salieron {got}. Por qué:",
+        "en": "You asked for {req} exercises and got {got}. Why:",
+        "zh": "你要求 {req} 个动作，生成了 {got} 个。原因：",
+    },
+    "families": {
+        "es": "para {groups} solo hay {n} tipos de ejercicio distintos y no se repite el mismo tipo para rellenar",
+        "en": "{groups} only has {n} different exercise types and the same type is never repeated to fill the count",
+        "zh": "{groups} 只有 {n} 种不同的动作类型，且不会重复同类动作来凑数",
+    },
+    "symptoms": {
+        "es": "tus síntomas o dolor descartaron movimientos ({patterns})",
+        "en": "your symptoms or pain ruled out movements ({patterns})",
+        "zh": "你的症状或疼痛排除了部分动作（{patterns}）",
+    },
+    "symptoms_plain": {
+        "es": "tus síntomas o dolor descartaron algunos ejercicios",
+        "en": "your symptoms or pain ruled out some exercises",
+        "zh": "你的症状或疼痛排除了部分动作",
+    },
+    "time": {
+        "es": "con {minutes} min solo caben {got} ejercicios con sus series y descansos",
+        "en": "{minutes} min only fit {got} exercises with their sets and rests",
+        "zh": "{minutes} 分钟只够完成 {got} 个动作（含组数和休息）",
+    },
+    "equipment": {
+        "es": "tu gimnasio no tiene el equipo de algunos ejercicios",
+        "en": "your gym lacks the equipment for some exercises",
+        "zh": "你的健身房缺少部分动作所需的器械",
+    },
+    "impact": {
+        "es": "por tus sensores de hoy solo valen ejercicios de impacto {cap}",
+        "en": "today's sensors only allow {cap}-impact exercises",
+        "zh": "根据今天的传感器，只允许{cap}冲击的动作",
+    },
+    "generic": {
+        "es": "no quedaron más ejercicios seguros y distintos para esta combinación",
+        "en": "no more safe, different exercises were left for this combination",
+        "zh": "该组合没有更多安全且不同的动作",
+    },
+}
+_IMPACT_WORD = {"es": {"LOW": "bajo", "MEDIUM": "medio"}, "en": {"LOW": "low", "MEDIUM": "medium"}, "zh": {"LOW": "低", "MEDIUM": "中"}}
+
+
+def _family_count(groups: list[str]) -> int:
+    """Different exercise families (variants collapsed) that train these groups."""
+    from syncfit_contracts import load_exercises
+
+    wanted = {str(g) for g in groups}
+    families = set()
+    for exercise in load_exercises():
+        role = str(getattr(exercise, "role", "MAIN") or "MAIN").split(".")[-1]
+        if role in ("WARMUP", "ACTIVATION"):
+            continue
+        trained = {str(m).split(".")[-1] for m in (exercise.muscle_groups or [])}
+        if trained & wanted:
+            families.add(getattr(exercise, "variant_of", None) or exercise.id)
+    return len(families)
+
+
+def _shortfall(
+    language: str,
+    requested: int,
+    delivered: int,
+    groups: list[str],
+    group_labels: list[str],
+    blocked_patterns: list[str],
+    had_symptoms: bool,
+    time_budget: int | None,
+    gym_filter: bool,
+    impact_cap: str | None,
+) -> dict | None:
+    """Explain why the routine has fewer exercises than requested."""
+    if delivered >= requested or delivered == 0:
+        return None
+    code = language.lower() if language.lower() in ("es", "en", "zh") else "en"
+    text = lambda key, **v: _SHORT_TEXT[key][code].format(**v)
+    reasons: list[dict] = []
+    families = _family_count(groups)
+    if families < requested:
+        reasons.append({"code": "FAMILIES", "text": text("families", groups=", ".join(group_labels), n=families)})
+    if blocked_patterns:
+        reasons.append({"code": "SYMPTOMS", "text": text("symptoms", patterns=", ".join(sorted(set(blocked_patterns))))})
+    elif had_symptoms:
+        reasons.append({"code": "SYMPTOMS", "text": text("symptoms_plain")})
+    if time_budget:
+        reasons.append({"code": "TIME", "text": text("time", minutes=time_budget, got=delivered)})
+    if impact_cap in ("LOW", "MEDIUM"):
+        reasons.append({"code": "IMPACT", "text": text("impact", cap=_IMPACT_WORD[code][impact_cap])})
+    if gym_filter:
+        reasons.append({"code": "EQUIPMENT", "text": text("equipment")})
+    if not reasons:
+        reasons.append({"code": "OTHER", "text": text("generic")})
+    summary = text("title", req=requested, got=delivered) + " " + "; ".join(r["text"] for r in reasons) + "."
+    return {"requested": requested, "delivered": delivered, "reasons": reasons, "summary": summary}
+
+
 def _with_catalog_flags(entries: list[dict]) -> list[dict]:
     """Fill `compound` / `movement_pattern` from the catalog before ordering.
 
@@ -406,7 +504,30 @@ def capture(
         entry.get("exercise_id"): list(entry.get("muscle_groups") or []) for entry in ordered
     }
 
-    alerts = list(readiness.reasons) + list(symptom_context.advice) + list(symptom_alerts)
+    requested = exercises_count or 5
+    delivered = sum(1 for entry in ordered if not entry.get("blocked"))
+    from .options import list_options
+
+    labels_by_value = {
+        option["value"]: option["label"]
+        for category in ("muscle_group_isolated", "muscle_group_general")
+        for option in list_options(session, language).get(category, [])
+    }
+    group_labels = [labels_by_value.get(str(g), str(g).replace("_", " ").lower()) for g in groups]
+    shortfall = _shortfall(
+        language,
+        requested,
+        delivered,
+        list(groups),
+        group_labels,
+        list(contraindicated) + list(fallback_blocked),
+        bool(symptom_ids),
+        time_budget_minutes,
+        equipment is not None,
+        readiness_service.stricter_impact(symptom_context.impact_cap, readiness.impact_cap),
+    )
+
+    alerts = ([shortfall["summary"]] if shortfall else []) + list(readiness.reasons) + list(symptom_context.advice) + list(symptom_alerts)
     if ordered:
         alerts.append(
             {
@@ -444,6 +565,7 @@ def capture(
         "machine_preferences": machine_preferences,
         "biomarkers": dict(frame["biomarkers"]),
         "readiness": readiness.as_dict(core.k_load, energy_factor(energy), language),
+        "shortfall": shortfall,
         "timeline": timeline,
         "total_estimated_minutes": payload.get("total_estimated_minutes"),
         "alerts": alerts,
