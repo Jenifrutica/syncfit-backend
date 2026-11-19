@@ -26,3 +26,14 @@ def _auth(token: str) -> dict:
 def test_profile_requires_a_valid_token():
     assert client.get("/api/v1/profile").status_code == 401
     assert client.get("/api/v1/profile", headers=_auth("not-a-jwt")).status_code == 401
+
+
+def test_energy_rejects_an_unknown_level():
+    checkin = {
+        "schema_version": "1.2.0",
+        "timestamp": "2026-09-23T07:00:00Z",
+        "energy_level": "HYPER",
+        "modality": "MENSTRUAL_CYCLE",
+        "day_or_week": 3,
+    }
+    assert client.post("/api/v1/energy", json=checkin).status_code == 422
