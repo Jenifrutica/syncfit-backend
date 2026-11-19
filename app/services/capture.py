@@ -87,8 +87,8 @@ _SHORT_TEXT = {
         "zh": "你要求 {req} 个动作，生成了 {got} 个。原因：",
     },
     "families": {
-        "es": "para {groups} solo hay {n} tipos de ejercicio distintos y no se repite el mismo tipo para rellenar",
-        "en": "{groups} only has {n} different exercise types and the same type is never repeated to fill the count",
+        "es": "para {groups} solo hay {n} {tipos} de ejercicio y no se repite el mismo tipo para rellenar",
+        "en": "{groups} only has {n} different exercise {types} and the same type is never repeated to fill the count",
         "zh": "{groups} 只有 {n} 种不同的动作类型，且不会重复同类动作来凑数",
     },
     "symptoms": {
@@ -161,7 +161,16 @@ def _shortfall(
     reasons: list[dict] = []
     families = _family_count(groups)
     if families < requested:
-        reasons.append({"code": "FAMILIES", "text": text("families", groups=", ".join(group_labels), n=families)})
+        reasons.append({
+            "code": "FAMILIES",
+            "text": text(
+                "families",
+                groups=", ".join(group_labels),
+                n=families,
+                tipos="tipo" if families == 1 else "tipos distintos",
+                types="type" if families == 1 else "types",
+            ),
+        })
     if blocked_patterns:
         reasons.append({"code": "SYMPTOMS", "text": text("symptoms", patterns=", ".join(sorted(set(blocked_patterns))))})
     elif had_symptoms:
