@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from syncfit_contracts import EnergyCheckIn, RoutineRequest, SupplementRequest, UserProfile
@@ -33,7 +34,7 @@ from ..services.live import latest as latest_live
 from ..services.live import latest_force
 from ..services.machines import list_machines
 from ..services.options import list_options
-from ..services.routines import generate_routine
+from ..services.routines import RoutineProviderUnavailable, generate_routine
 from ..services.sharing import (
     build_shared_profile,
     create_share,
@@ -165,14 +166,12 @@ def create_routine(
     options_service.sync_engine_options(session)
     try:
         request = RoutineRequest.model_validate(payload)
-    except Exception as exc:
+    except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         return generate_routine(request, engine=engine, profile_id=profile_id)
-    except RuntimeError as exc:
+    except RoutineProviderUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/supplements")

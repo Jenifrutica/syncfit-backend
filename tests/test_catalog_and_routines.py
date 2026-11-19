@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.api import routes
 from app.main import app
 
 client = TestClient(app)
@@ -59,7 +60,18 @@ def test_ai_engine_without_reasoning_returns_503():
         params={"engine": "ai"},
         json={"muscle_groups": ["GLUTES"], "language": "EN"},
     )
-    assert response.status_code in (502, 503)
+    assert response.status_code == 503
+
+
+def test_routine_internal_error_is_not_reported_as_provider_unavailable(monkeypatch):
+    def broken_generator(*args, **kwargs):
+        raise RuntimeError("private internal detail")
+
+    monkeypatch.setattr(routes, "generate_routine", broken_generator)
+    failing = TestClient(app, raise_server_exceptions=False)
+    response = failing.post("/api/v1/routines", json={"muscle_groups": ["GLUTES"]})
+    assert response.status_code == 500
+    assert "private internal detail" not in response.text
 
 
 def test_routine_has_timing_and_warmup():

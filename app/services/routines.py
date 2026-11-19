@@ -23,6 +23,10 @@ DEFAULT_EXERCISES_PER_GROUP = 2
 logger = logging.getLogger(__name__)
 
 
+class RoutineProviderUnavailable(RuntimeError):
+    """The optional reasoning engine cannot serve this routine request."""
+
+
 def _value(item: object) -> str:
     return item.value if hasattr(item, "value") else str(item)
 
@@ -79,13 +83,19 @@ def generate_routine(
 
     if engine == "ai":
         try:
-            from syncfit_ai import OpenCodeGoClient, RoutinePlanner
-        except ImportError as exc:  # pragma: no cover - depends on environment
-            raise RuntimeError(
+            from syncfit_ai import OpenCodeGoClient, OpenCodeGoError, RoutinePlanner
+        except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+            if exc.name != "syncfit_ai":
+                raise
+            raise RoutineProviderUnavailable(
                 "AI engine requested but syncfit-ai-reasoning is not installed "
                 "(pip install 'syncfit-backend[reasoning]')."
             ) from exc
-        planner = RoutinePlanner(OpenCodeGoClient())
+        try:
+            client = OpenCodeGoClient()
+        except OpenCodeGoError as exc:
+            raise RoutineProviderUnavailable("The routine provider is unavailable.") from exc
+        planner = RoutinePlanner(client)
         result = planner.plan(
             request,
             core_result,
@@ -109,7 +119,11 @@ def generate_routine(
     if engine == "deterministic":
         try:
             from syncfit_ai import build_prescription
-
+        except ModuleNotFoundError as exc:
+            if exc.name != "syncfit_ai":
+                raise
+            logger.warning("Deterministic engine unavailable; using simulator")
+        else:
             payload = build_prescription(
                 request,
                 core_result,
@@ -129,8 +143,6 @@ def generate_routine(
             validated = RoutineResponse.model_validate(payload).model_dump(mode="json")
             validated["variation_pct"] = variation_pct(k_load, request.energy_level)
             return validated
-        except Exception as exc:
-            logger.warning("Deterministic routine failed (%s); using simulator", type(exc).__name__)
 
     payload = build_routine(
         groups,
