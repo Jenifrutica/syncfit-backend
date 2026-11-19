@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from syncfit_database import User
 
@@ -124,6 +126,29 @@ def authenticate_token(session: Session, token: str) -> User:
     return user
 
 
+def _check_identity(session: Session, email: str | None, document_id: str | None, exclude_id: str | None) -> None:
+    users = session.query(User)
+    if exclude_id is not None:
+        users = users.filter(User.id != exclude_id)
+    if email and users.filter_by(email=email).first() is not None:
+        raise RegistrationConflict("email already registered")
+    if document_id and users.filter_by(document_id=document_id).first() is not None:
+        raise RegistrationConflict("document_id already registered")
+
+
+@contextmanager
+def identity_transaction(session: Session, email: str | None, document_id: str | None, exclude_id: str | None = None):
+    _check_identity(session, email, document_id, exclude_id)
+    try:
+        yield
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        # A concurrent write can claim the identity after the initial check.
+        _check_identity(session, email, document_id, exclude_id)
+        raise
+
+
 def register_user(session: Session, *, email: str, password: str, display_name: str, document_id: str) -> User:
     email = email.lower()
     try:
@@ -131,13 +156,9 @@ def register_user(session: Session, *, email: str, password: str, display_name: 
         document_id = validate_document_id(document_id)
     except ValueError as exc:
         raise InvalidAccountData(str(exc)) from exc
-    if session.query(User).filter_by(email=email).one_or_none() is not None:
-        raise RegistrationConflict("email already registered")
-    if session.query(User).filter_by(document_id=document_id).one_or_none() is not None:
-        raise RegistrationConflict("document_id already registered")
-    user = User(email=email, password_hash=hash_password(password), display_name=display_name, document_id=document_id)
-    session.add(user)
-    session.commit()
+    with identity_transaction(session, email, document_id):
+        user = User(email=email, password_hash=hash_password(password), display_name=display_name, document_id=document_id)
+        session.add(user)
     session.refresh(user)
     return user
 

@@ -414,3 +414,25 @@ def test_bench_enables_bench_exercises():
     assert by_pattern.get("lunge") == "step-ups"  # bench enables the step-up
     # dumbbell-only lunge is not available with just a bench
     assert "db-bulgarian-split-squat" not in {e["exercise_id"] for e in routine}
+
+
+def test_admin_identity_updates_allow_own_fields_and_reject_other_accounts():
+    _ensure_root()
+    headers = {"Authorization": f"Bearer {_login('root@syncfit.dev', ROOT_PASSWORD)}"}
+    payload = {"email": "identity@x.dev", "password": "secret123",
+               "display_name": "Identity", "document_id": "9281437512"}
+    admin_url = "/api/v1/admin/gym-admins"
+    created = client.post(admin_url, json=payload, headers=headers)
+    assert created.status_code == 201
+    user_url = "/api/v1/admin/users/" + created.json()["id"]
+    assert client.patch(user_url, json=payload, headers=headers).status_code == 200
+    duplicate = dict(payload, email="other-identity@x.dev")
+    assert client.post(admin_url, json=duplicate, headers=headers).status_code == 409
+    duplicate["document_id"] = "9281437513"
+    assert client.post(admin_url, json=duplicate, headers=headers).status_code == 201
+    for field in ("email", "document_id"):
+        response = client.patch(user_url, json={field: duplicate[field]}, headers=headers)
+        assert response.status_code == 409
+    cleared = client.patch(user_url, json={"document_id": None}, headers=headers)
+    assert cleared.status_code == 200
+    assert cleared.json()["document_id"] is None
