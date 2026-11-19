@@ -8,7 +8,9 @@ from app.db import get_database
 from app.main import app
 from app.services.admin import ensure_superadmin
 from app.services.catalog_db import ensure_catalog, load_registry
+from app.services.catalog import list_muscle_groups
 from app.services.credentials import client_digest
+from app.services.options import capture_default_groups
 
 @pytest.fixture(scope="module")
 def client():
@@ -80,6 +82,21 @@ def test_muscle_groups_come_from_the_database(client: TestClient):
             .all()
         }
     assert set(groups) <= active
+
+
+def test_capture_defaults_follow_active_muscle_group_order(client: TestClient):
+    with get_database().session() as session:
+        groups = session.query(AppOption).filter(
+            AppOption.category.in_(("muscle_group_general", "muscle_group_isolated"))
+        )
+        groups.update({"active": False})
+        assert list_muscle_groups(session) == []
+        assert capture_default_groups(session) == []
+
+        session.add(AppOption(category="muscle_group_general", value="CUSTOM_ONE", sort_order=3))
+        session.add(AppOption(category="muscle_group_general", value="CUSTOM_TWO", sort_order=0))
+        assert capture_default_groups(session) == ["CUSTOM_TWO", "CUSTOM_ONE"]
+        session.rollback()
 
 
 def test_unknown_muscle_group_is_422(client: TestClient):

@@ -119,9 +119,19 @@ def list_options(session: Session, language: str = "EN") -> dict[str, list[dict]
     return grouped
 
 
+def capture_default_groups(session: Session) -> list[str]:
+    rows = session.query(AppOption).filter(AppOption.category.in_((GENERAL, ISOLATED))).order_by(
+        AppOption.sort_order, AppOption.value
+    ).all()
+    if not rows:
+        return [value for category, value, _ in DEFAULT_OPTIONS if category == GENERAL][:3]
+    active = [row for row in rows if row.active]
+    return ([row.value for row in active if row.category == GENERAL] or [row.value for row in active])[:3]
+
+
 def active_values(session: Session, category: str) -> set[str]:
-    rows = session.query(AppOption.value).filter(AppOption.category == category, AppOption.active.is_(True)).all()
-    return {value for (value,) in rows}
+    rows = session.query(AppOption.value, AppOption.active).filter(AppOption.category == category).all()
+    return {value for value, active in rows if active} if rows else default_values(category)
 
 
 def default_values(category: str) -> set[str]:
