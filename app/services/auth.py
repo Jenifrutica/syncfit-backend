@@ -156,8 +156,8 @@ def register_user(session: Session, *, email: str, password: str, display_name: 
         document_id = validate_document_id(document_id)
     except ValueError as exc:
         raise InvalidAccountData(str(exc)) from exc
-    user = User(email=email, password_hash=hash_password(password), display_name=display_name, document_id=document_id)
     with identity_transaction(session, email, document_id):
+        user = User(email=email, password_hash=hash_password(password), display_name=display_name, document_id=document_id)
         session.add(user)
     session.refresh(user)
     return user
