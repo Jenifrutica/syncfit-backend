@@ -209,3 +209,28 @@ def test_capture_end_to_end_strength_pulse_and_temperature():
     assert simulated["readiness"]["source"] == "simulated"
     after = _capture(h, hr_bpm=70, force_kg=20.5, temp_c=35.0)
     assert after["readiness"]["strength_reference_kg"] == 20.5  # the simulated 99 kg was not stored
+
+
+def test_estimate_without_prototype_uses_history_then_body():
+    from app.services.readiness import estimate
+
+    fresh = _user()
+    with get_database().session_scope() as s:
+        body = estimate(s, fresh, age=40, weight_kg=60.0, height_cm=165.0, modality="MENSTRUAL_CYCLE")
+    assert body["sources"] == {"heart_rate": "age", "force": "body", "temperature": "typical"}
+    assert body["heart_rate_bpm"] == 76 and body["peak_force_kg"] == 17.1 and body["temperature_c"] == 35.0
+
+    seen = _user()
+    _history(seen, [(78, 20.0, 35.2), (150, 22.0, 35.4), (80, 18.0, 35.0)])
+    with get_database().session_scope() as s:
+        mine = estimate(s, seen, age=40, weight_kg=60.0, height_cm=165.0, modality=None)
+    assert mine["sources"] == {"heart_rate": "history", "force": "history", "temperature": "history"}
+    assert mine["heart_rate_bpm"] == 79  # the bad 150 is ignored
+    assert mine["peak_force_kg"] == 20.0 and mine["temperature_c"] == 35.2
+
+
+def test_estimate_endpoint():
+    h = _athlete()
+    r = client.get("/api/v1/sensors/estimate", headers=h)
+    assert r.status_code == 200 and r.json()["peak_force_kg"] > 0
+    assert client.get("/api/v1/sensors/estimate").status_code == 401

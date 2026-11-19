@@ -344,6 +344,47 @@ def evaluate(
     return result
 
 
+TYPICAL_EYE_TEMP_C = 35.0
+
+
+def estimate(session: Session, user: User, age: int | None, weight_kg: float | None, height_cm: float | None, modality: str | None) -> dict[str, Any]:
+    """Values to use when there is no prototype: her own recent device readings
+    first, otherwise what is expected for her age, weight and height."""
+    history = _history(session, user)[:BASELINE_READINGS]
+    basis: list[str] = []
+
+    pulses = [r.heart_rate_bpm for r in history if r.heart_rate_bpm and 50 <= r.heart_rate_bpm <= 100]
+    if pulses:
+        bpm, src_hr = statistics.median(pulses), "history"
+    else:
+        bpm, src_hr = expected_resting_hr(age, modality), "age"
+    basis.append(src_hr)
+
+    pushes = [r.peak_force_kg for r in history if r.peak_force_kg]
+    if pushes:
+        force, src_force = statistics.median(pushes), "history"
+    elif weight_kg:
+        # Isometric push on the platform: ~30 % of body weight, a little less
+        # with age (-0.5 %/year over 30) and taller levers push slightly more.
+        factor = 0.30 * (1 - max((age or 30) - 30, 0) * 0.005)
+        if height_cm:
+            factor *= min(max(height_cm / 165.0, 0.9), 1.1)
+        force, src_force = weight_kg * factor, "body"
+    else:
+        force, src_force = 15.0, "default"
+    basis.append(src_force)
+
+    temps = [r.temperature_c for r in history if r.temperature_c]
+    temp, src_temp = (statistics.median(temps), "history") if temps else (TYPICAL_EYE_TEMP_C, "typical")
+    basis.append(src_temp)
+    return {
+        "heart_rate_bpm": round(bpm),
+        "peak_force_kg": round(force, 1),
+        "temperature_c": round(temp, 1),
+        "sources": {"heart_rate": src_hr, "force": src_force, "temperature": src_temp},
+    }
+
+
 def record(session: Session, user: User, readings: Readings) -> None:
     """Store a real device reading (simulated check-ins never set references)."""
     if readings.source != "device" or not readings.any():
@@ -394,4 +435,4 @@ def apply_to_entries(entries: list[dict[str, Any]], readiness: Readiness) -> lis
     return adjusted
 
 
-__all__ = ["Readiness", "Readings", "apply_to_entries", "evaluate", "record", "stricter_impact"]
+__all__ = ["Readiness", "Readings", "apply_to_entries", "estimate", "evaluate", "record", "stricter_impact"]

@@ -121,6 +121,23 @@ def live_status(max_age_seconds: float = Query(default=15.0, ge=1, le=600)) -> d
     }
 
 
+@router.get("/sensors/estimate")
+def sensors_estimate(user: User = Depends(current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Check-in values to simulate without the prototype: her recent device
+    readings, or what is expected for her age, weight and height."""
+    from ..services.readiness import estimate
+
+    profile = profiles_db.get_profile(session, user)
+    return estimate(
+        session,
+        user,
+        age=profile.age if profile else None,
+        weight_kg=profile.weight_kg if profile else None,
+        height_cm=profile.height_cm if profile else None,
+        modality=profile.modality if profile else None,
+    )
+
+
 @router.post("/live/tare", status_code=202)
 async def tare_device(user: User = Depends(current_user)) -> dict[str, str]:
     """Ask the connected prototype to re-zero its load cell."""
