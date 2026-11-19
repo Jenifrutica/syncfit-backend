@@ -77,6 +77,14 @@ DEFAULT_META: dict[tuple[str, str], dict] = {
     (GOAL_PHASE, "RECOVERY"): {"calorie_factor": 1.0},
 }
 
+for muscles, zones in (
+    (("GLUTES", "QUADRICEPS", "HAMSTRINGS", "CALVES"), ("LOWER_BODY", "FULL_LEG")),
+    (("ABS", "OBLIQUES"), ("CORE",)),
+    (("BACK", "LATS", "CHEST", "SHOULDERS", "BICEPS", "TRICEPS", "FOREARMS"), ("UPPER_BODY",)),
+):
+    for muscle in muscles:
+        DEFAULT_META[ISOLATED, muscle] = {"zones": [*zones, "FULL_BODY"]}
+
 # Goal-phase calorie factors loaded from the database (see sync_engine_options).
 _calorie_factors: dict[str, float] = {}
 
@@ -115,8 +123,37 @@ def list_options(session: Session, language: str = "EN") -> dict[str, list[dict]
     for row in rows:
         labels = row.labels or {}
         label = labels.get(code) or labels.get("en") or row.value.replace("_", " ").title()
-        grouped.setdefault(row.category, []).append({"value": row.value, "label": label, "labels": labels})
+        option = {"value": row.value, "label": label, "labels": labels}
+        if row.category == ISOLATED:
+            option["zones"] = muscle_zones(row.value, row.meta)
+        grouped.setdefault(row.category, []).append(option)
     return grouped
+
+
+def muscle_zones(value: str, meta: dict | None) -> list[str]:
+    zones = (meta or DEFAULT_META.get((ISOLATED, value), {})).get("zones", [])
+    return [zone for zone in zones if isinstance(zone, str)] if isinstance(zones, list) else []
+
+
+def incompatible_training_pair(session: Session, groups: list[str]) -> tuple[str, str] | None:
+    options = list_options(session)
+    if not options:
+        muscles = {
+            value: muscle_zones(value, None)
+            for category, value, _ in DEFAULT_OPTIONS
+            if category == ISOLATED
+        }
+        zones = default_values(GENERAL)
+    else:
+        muscles = {option["value"]: option["zones"] for option in options.get(ISOLATED, [])}
+        zones = {option["value"] for option in options.get(GENERAL, [])}
+    selected_zones = zones.intersection(groups)
+    for muscle in groups:
+        if muscle in muscles:
+            for zone in groups:
+                if zone in selected_zones and zone not in muscles[muscle]:
+                    return muscle, zone
+    return None
 
 
 def capture_default_groups(session: Session) -> list[str]:
