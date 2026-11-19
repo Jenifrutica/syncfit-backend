@@ -28,7 +28,7 @@ from syncfit_simulator import generate_frame, get_scenario
 from ..config import settings
 from .cycles import compute_timeline
 from .engine import engine_result
-from .gyms import available_equipment_keys, available_exercise_ids, station_index
+from .gyms import available_equipment_keys, available_exercise_ids, equipment_stations, station_for_equipment, station_index
 from .live import latest as latest_live
 from . import readiness as readiness_service
 from .loads import adjust_entries, energy_factor
@@ -54,12 +54,23 @@ def _label(language: str, key: str) -> str:
     return labels.get(key, key)
 
 
-def _annotate_machines(entries: list[dict], station_map: dict[str, dict]) -> list[dict]:
-    """Tag entries that map to a gym machine with its id, name and photo."""
+def _annotate_machines(
+    entries: list[dict], station_map: dict[str, dict], stations_by_equipment: dict[str, list[dict]] | None = None
+) -> list[dict]:
+    """Tag entries with the gym machine where they are done (id, name, photo).
+
+    Exact machine first; otherwise a station of the athlete's gym with the
+    equipment the exercise needs (e.g. a cable triceps pushdown -> the gym's
+    high pulley), so the athlete sees WHERE to do it.
+    """
     annotated: list[dict] = []
     for entry in entries:
         item = dict(entry)
         station = station_map.get(item.get("exercise_id"))
+        if not station and stations_by_equipment and item.get("exercise_id"):
+            station = station_for_equipment(item["exercise_id"], stations_by_equipment)
+            if station:
+                item["machine_match"] = "equipment"
         if station:
             item["machine_id"] = station["id"]
             item["machine_name"] = station["name"]
@@ -305,8 +316,9 @@ def capture(
         ordered = order_entries(_with_catalog_flags(ordered), phase_name, language)
 
     # Tag exercises handled by one of the athlete's gym machines (id, name, photo).
-    ordered = _annotate_machines(ordered, station_map)
-    warmup = _annotate_machines(warmup, station_map)
+    stations_by_equipment = equipment_stations(session, profile, language) if profile is not None else {}
+    ordered = _annotate_machines(ordered, station_map, stations_by_equipment)
+    warmup = _annotate_machines(warmup, station_map, stations_by_equipment)
 
     # Pulse / temperature: fewer working sets and longer rests when needed.
     ordered = readiness_service.apply_to_entries(ordered, readiness)

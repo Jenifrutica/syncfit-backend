@@ -477,7 +477,83 @@ def station_index(
     return index, preferred
 
 
+# Equipment priority when an exercise needs several things (bench press needs a
+# barbell AND a bench): the most specific station is the best "where to do it".
+_EQUIPMENT_PRIORITY = ["cable", "smith", "machine", "bench", "barbell", "dumbbell", "pullup-bar", "dip-bar", "ghd", "box", "band"]
+_HIGH_CABLE = ("pushdown", "pulldown", "pull-down", "face-pull", "high", "overhead-cable", "straight-arm")
+_INCLINE = ("incline", "decline", "inclin", "declin")
+
+
+def equipment_stations(session: Session, profile: Profile, language: str = "EN") -> dict[str, list[dict]]:
+    """Active gym's stations grouped by equipment key (cable, bench, smith...)."""
+    gym_id = profile.active_gym_id
+    if not gym_id:
+        memberships = list_memberships(session, profile)
+        gym_id = memberships[0].gym_id if memberships else None
+    if not gym_id:
+        return {}
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for machine in session.query(GymMachine).filter_by(gym_id=gym_id).all():
+        station = serialize_machine(machine, language)
+        keys = {machine.equipment_key} if machine.equipment_key else set()
+        mapped = _EQUIPMENT_TYPE_KEYS.get(str(machine.equipment_type or "").upper())
+        if mapped:
+            keys.add(mapped)
+        for key in keys:
+            grouped[key].append(station)
+    return dict(grouped)
+
+
+def _station_text(station: dict) -> str:
+    name = station.get("name")
+    parts = [station.get("name_text") or ""]
+    if isinstance(name, dict):
+        parts += [str(v) for v in name.values()]
+    elif name:
+        parts.append(str(name))
+    return " ".join(parts).lower()
+
+
+def station_for_equipment(exercise_id: str, stations: dict[str, list[dict]]) -> dict | None:
+    """Best station of the athlete's gym for an exercise without an exact machine.
+
+    Cable: overhead pulls/pushdowns -> the high pulley, the rest -> the low one.
+    Bench: incline/decline work -> the adjustable bench, flat -> the flat one.
+    """
+    if not stations:
+        return None
+    from syncfit_contracts import get_exercise
+
+    exercise = get_exercise(exercise_id)
+    if exercise is None:
+        return None
+    needed = [str(x).lower() for x in (getattr(exercise, "required_equipment", None) or [])]
+    if getattr(exercise, "equipment", None):
+        needed.append(str(exercise.equipment).lower())
+    for key in sorted(set(needed), key=lambda k: _EQUIPMENT_PRIORITY.index(k) if k in _EQUIPMENT_PRIORITY else 99):
+        options = stations.get(key) or []
+        if not options:
+            continue
+        if len(options) == 1:
+            return options[0]
+        ident = exercise_id.lower()
+        if key == "cable":
+            want_high = any(word in ident for word in _HIGH_CABLE)
+            words = ("alta", "alto", "high", "upper", "superior") if want_high else ("baja", "bajo", "low", "lower", "inferior")
+        elif key == "bench":
+            words = ("gradu", "ajust", "adjust", "inclin", "regul") if any(w in ident for w in _INCLINE) else ("horizontal", "plano", "flat", "recto")
+        else:
+            words = ()
+        for station in options:
+            if any(word in _station_text(station) for word in words):
+                return station
+        return options[0]
+    return None
+
+
 __all__ = [
+    "equipment_stations",
+    "station_for_equipment",
     "create_gym",
     "list_owned",
     "get_by_id",
