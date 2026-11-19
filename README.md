@@ -1,5 +1,7 @@
 # SyncFit Backend
 
+**Live app:** https://syncfit.jenilarper.dev
+
 Asynchronous application server of SyncFit Edge. Persists data, ingests continuous telemetry, orchestrates the numerical core and the reasoning layer, and serves the frontend.
 
 ## Documentation
@@ -239,3 +241,7 @@ available machines scale weights; body comp + goal feed macros.
 
 - (Opcional) Tests para rate-limiting (`slowapi`) y algunos endpoints de admin.
 - (Opcional) Exponer `/docs` solo en entornos de desarrollo.
+
+## Data structures
+
+- No custom structures of its own: it uses those of `syncfit-core` and `syncfit-ai-reasoning`, plus a `functools.lru_cache` that builds the trained engine only once per process.
