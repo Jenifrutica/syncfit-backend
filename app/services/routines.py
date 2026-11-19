@@ -7,6 +7,7 @@ configured. Baseline loads from the athlete profile are applied in both paths.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Iterable
 
 from syncfit_contracts import RoutineRequest, RoutineResponse
@@ -19,6 +20,7 @@ from .engine import engine_result
 from .loads import adjust_entries, variation_pct
 
 DEFAULT_EXERCISES_PER_GROUP = 2
+logger = logging.getLogger(__name__)
 
 
 class RoutineProviderUnavailable(RuntimeError):
@@ -120,6 +122,7 @@ def generate_routine(
         except ModuleNotFoundError as exc:
             if exc.name != "syncfit_ai":
                 raise
+            logger.warning("Deterministic engine unavailable; using simulator")
         else:
             payload = build_prescription(
                 request,

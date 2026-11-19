@@ -97,6 +97,21 @@ def test_failed_generation_is_marked_and_can_be_retried(monkeypatch):
     assert retry.status_code == 200 and calls["n"] == 2
 
 
+def test_failure_recording_does_not_hide_the_original_capture_error(monkeypatch):
+    headers = _athlete()
+
+    def capture_error(*args, **kwargs):
+        raise RuntimeError("engine down")
+
+    def status_error(*args, **kwargs):
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(routes_module, "capture", capture_error)
+    monkeypatch.setattr(routes_module.capture_jobs, "fail", status_error)
+    with pytest.raises(RuntimeError, match="engine down"):
+        _capture(headers, _rid())
+
+
 @pytest.mark.parametrize(
     ("error", "expected_engines", "status_code"),
     [

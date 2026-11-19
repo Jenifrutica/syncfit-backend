@@ -8,7 +8,7 @@ from collections import defaultdict
 
 from sqlalchemy.orm import Session
 from syncfit_contracts import load_exercises
-from syncfit_database import Gym, GymMachine, GymMembership, Profile, User
+from syncfit_database import Gym, GymDeletionNotice, GymMachine, GymMembership, Profile, User
 
 LANGS = ("en", "es", "zh")
 _TOKEN_RE = re.compile(r"[a-záéíóúüñ]+")
@@ -60,12 +60,13 @@ def list_owned(session: Session, user: User) -> list[Gym]:
     return session.query(Gym).filter_by(owner_user_id=user.id).all()
 
 
-def get_by_id(session: Session, gym_id: str) -> Gym | None:
-    return session.get(Gym, gym_id)
+def get_by_id(session: Session, gym_id: str, *, lock: bool = False) -> Gym | None:
+    return session.get(Gym, gym_id, with_for_update=lock)
 
 
-def get_by_code(session: Session, code: str) -> Gym | None:
-    return session.query(Gym).filter_by(code=code.upper()).one_or_none()
+def get_by_code(session: Session, code: str, *, lock: bool = False) -> Gym | None:
+    query = session.query(Gym).filter_by(code=code.upper())
+    return (query.with_for_update() if lock else query).one_or_none()
 
 
 def add_machine(
@@ -143,11 +144,28 @@ def rename_gym(session: Session, gym: Gym, name: str) -> Gym:
 
 
 def delete_gym(session: Session, gym: Gym) -> None:
-    """Delete a gym: its memberships, dangling active pointers and machines."""
+    """Persist notices and remove the gym and its associations in one transaction."""
+    members = session.query(GymMembership.profile_id).filter_by(gym_id=gym.id)
+    active = session.query(Profile.id).filter_by(active_gym_id=gym.id)
+    session.add_all(
+        GymDeletionNotice(profile_id=profile_id, gym_id=gym.id, gym_name=gym.name)
+        for (profile_id,) in members.union(active)
+    )
     session.query(GymMembership).filter_by(gym_id=gym.id).delete()
     session.query(Profile).filter_by(active_gym_id=gym.id).update({"active_gym_id": None})
     session.delete(gym)  # machines cascade via the relationship
     session.flush()
+
+
+def deletion_notices(session: Session, profile: Profile) -> list[dict[str, str]]:
+    notices = session.query(GymDeletionNotice).filter_by(profile_id=profile.id).order_by(
+        GymDeletionNotice.created_at, GymDeletionNotice.id
+    )
+    return [{"id": notice.id, "gym_name": notice.gym_name} for notice in notices]
+
+
+def dismiss_deletion_notice(session: Session, profile: Profile, notice_id: str) -> None:
+    session.query(GymDeletionNotice).filter_by(id=notice_id, profile_id=profile.id).delete()
 
 
 def serialize_gym(gym: Gym, language: str = "EN") -> dict:

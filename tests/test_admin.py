@@ -196,6 +196,47 @@ def test_gym_admin_renames_and_deletes_gym():
     assert client.get("/api/v1/gyms/mine", headers=g).json() == []
 
 
+def test_deleted_gym_notice_survives_login_and_only_owner_can_dismiss():
+    _ensure_root()
+    root = {"Authorization": f"Bearer {_login('root@syncfit.dev', ROOT_PASSWORD)}"}
+    created = client.post("/api/v1/admin/gym-admins", headers=root, json={
+        "email": "unlink-owner@x.dev", "password": "secret123", "display_name": "Gym Owner",
+    })
+    assert created.status_code == 201, created.text
+    owner = {"Authorization": f"Bearer {_login('unlink-owner@x.dev', 'secret123')}"}
+    gym = client.post("/api/v1/gyms", json={"name": "Gimnasio Aurora"}, headers=owner).json()
+
+    def athlete(email, document_id):
+        response = client.post("/api/v1/auth/register", json={
+            "email": email, "password": "secret123", "display_name": "Athlete",
+            "document_id": document_id,
+        })
+        assert response.status_code == 201
+        headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+        client.put("/api/v1/profile", json={"modality": "MENSTRUAL_CYCLE"}, headers=headers)
+        return headers
+
+    email = "unlink-member@x.dev"
+    member = athlete(email, "3900000001")
+    other = athlete("unlink-outsider@x.dev", "3900000002")
+    assert client.post("/api/v1/gyms/join", json={"code": gym["code"]}, headers=member).status_code == 200
+    assert client.delete(f"/api/v1/gyms/{gym['id']}", headers=owner).status_code == 204
+
+    member = {"Authorization": f"Bearer {_login(email, 'secret123')}"}
+    endpoint = "/api/v1/gyms/notices"
+    assert client.get("/api/v1/gyms/joined", headers=member).json() == []
+    assert client.get("/api/v1/profile", headers=member).json()["active_gym_id"] is None
+    response = client.get(endpoint, headers=member)
+    assert response.status_code == 200
+    [notice] = response.json()
+    assert notice["gym_name"] == "Gimnasio Aurora"
+    assert client.get(endpoint, headers=other).json() == []
+    assert client.delete(f"{endpoint}/{notice['id']}", headers=other).status_code == 204
+    assert client.get(endpoint, headers=member).json() == [notice]
+    assert client.delete(f"{endpoint}/{notice['id']}", headers=member).status_code == 204
+    assert client.get(endpoint, headers=member).json() == []
+
+
 def test_register_requires_valid_unique_document():
     ok = {"email": "doc1@x.dev", "password": "secret123", "display_name": "Doc One", "document_id": "4000000001"}
     assert client.post("/api/v1/auth/register", json=ok).status_code == 201

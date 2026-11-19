@@ -8,6 +8,7 @@ everything in the database.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -37,6 +38,8 @@ from .options import capture_default_groups
 from .symptom_policy import build_symptom_context, fallback_patterns, hard_patterns
 from .symptoms import apply_symptoms
 from .routines import RoutineProviderUnavailable, generate_routine
+
+logger = logging.getLogger(__name__)
 
 
 _ALERT_LABELS = {
@@ -271,6 +274,7 @@ def capture(
             symptom_notes=symptom_notes,
         )
     except RoutineProviderUnavailable:
+        logger.warning("Routine provider for engine %s unavailable; using deterministic fallback", engine)
         payload = generate_routine(
             request,
             engine="deterministic",
