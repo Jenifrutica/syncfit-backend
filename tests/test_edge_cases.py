@@ -37,3 +37,10 @@ def test_energy_rejects_an_unknown_level():
         "day_or_week": 3,
     }
     assert client.post("/api/v1/energy", json=checkin).status_code == 422
+
+
+def test_unknown_gym_code_is_404_and_athletes_cannot_create_gyms():
+    token = _register("edge-gym@example.com")
+    assert client.post("/api/v1/gyms/join", json={"code": "ZZ9999"}, headers=_auth(token)).status_code == 404
+    assert client.get("/api/v1/gyms/ZZ9999", headers=_auth(token)).status_code == 404
+    assert client.post("/api/v1/gyms", json={"name": "Mine"}, headers=_auth(token)).status_code == 403
