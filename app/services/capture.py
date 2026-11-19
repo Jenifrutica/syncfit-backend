@@ -294,7 +294,11 @@ def capture(
             temperature_c=bio.get("object_temperature_c"),
             source="device" if live is not None else "simulated",
         )
-    readiness = readiness_service.evaluate(session, user, readings, phase, language)
+    readiness = readiness_service.evaluate(
+        session, user, readings, phase, language,
+        age=profile.age if profile is not None else None,
+        modality=modality,
+    )
 
     # Machines of the athlete's active gym: prefer exercises they cover.
     station_map, preferred = ({}, set())

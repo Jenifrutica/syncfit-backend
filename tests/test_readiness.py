@@ -65,17 +65,27 @@ def test_very_weak_push_is_floored():
     assert _eval(user, force=6.0).force_factor == 0.70
 
 
-def test_elevated_pulse_reduces_load_sets_and_lengthens_rest():
+def test_pulse_is_judged_against_the_expected_resting_range_not_history():
     user = _user()
-    _history(user, [(68, None, None), (70, None, None), (72, None, None)])
-    ok = _eval(user, hr=73)
-    assert ok.hr_factor == 1.0 and ok.sets_delta == 0
-    mild = _eval(user, hr=78)
+    # A history full of bad readings must not make 99 bpm look "usual".
+    _history(user, [(150, None, None), (152, None, None), (148, None, None)])
+    ok = _eval(user, hr=79)
+    assert ok.hr_factor == 1.0 and ok.sets_delta == 0 and ok.hr_baseline == 75.0 and ok.hr_range == (60, 100)
+    mild = _eval(user, hr=95)
     assert mild.hr_factor == 0.95 and mild.rest_extra_s == 15 and mild.sets_delta == 0
-    high = _eval(user, hr=85)
+    high = _eval(user, hr=106)
     assert high.hr_factor == 0.90 and high.sets_delta == 1 and high.rest_extra_s == 30
-    very = _eval(user, hr=104)
+    very = _eval(user, hr=118)
     assert very.hr_factor == 0.80 and very.sets_delta == 1
+
+
+def test_expected_resting_hr_by_age_and_pregnancy():
+    assert r.expected_resting_hr() == 75.0
+    assert r.expected_resting_hr(30) == 74.0
+    assert r.expected_resting_hr(30, "GESTATIONAL") == 86.0
+    with get_database().session_scope() as s:
+        pregnant = r.evaluate(s, _user(), r.Readings.clean(105, None, None), "TRIMESTER_2", "ES", age=30, modality="GESTATIONAL")
+    assert pregnant.hr_range == (60, 110) and pregnant.hr_factor == 0.95
 
 
 def test_temperature_respects_luteal_rise_and_flags_fever():
@@ -94,7 +104,7 @@ def test_temperature_respects_luteal_rise_and_flags_fever():
 def test_combined_factors_and_floor():
     user = _user()
     _history(user, [(65, 20.0, 35.0)])
-    res = _eval(user, hr=90, force=15.0, temp=35.7)
+    res = _eval(user, hr=115, force=15.0, temp=35.7)
     assert res.factor == round(0.75 * 0.80 * 0.85, 3) or res.factor < 0.6
     assert res.load_multiplier(0.8, 0.88) == r.MIN_MULTIPLIER
 

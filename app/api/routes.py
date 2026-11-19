@@ -303,6 +303,29 @@ def machines(language: str = Query(default="EN")) -> list[dict[str, Any]]:
     return list_machines(language)
 
 
+@router.post("/exercises/{exercise_id}/suggest")
+def exercise_suggest(
+    exercise_id: str,
+    payload: dict[str, Any],
+    language: str = Query(default="EN"),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """The athlete types an exercise she has in mind; answer with catalog
+    options ranked as replacements (same pattern > same muscles > other)."""
+    from ..services.exercise_suggest import suggest
+
+    text = str(payload.get("text") or "").strip()
+    if not 2 <= len(text) <= 80:
+        raise HTTPException(status_code=422, detail="text must be 2-80 characters")
+    profile = profiles_db.get_profile(session, user)
+    exclude_supine = False
+    if profile is not None and profile.modality == "GESTATIONAL":
+        week = compute_timeline(profile).get("week")
+        exclude_supine = bool(week and week >= 16)
+    return {"query": text, "options": suggest(exercise_id, text, language, exclude_supine=exclude_supine)}
+
+
 @router.get("/exercises/{exercise_id}/alternatives")
 def exercise_alternatives(exercise_id: str, language: str = Query(default="EN"), user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     profile = profiles_db.get_profile(session, user)

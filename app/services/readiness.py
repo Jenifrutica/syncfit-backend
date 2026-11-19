@@ -64,14 +64,14 @@ _TEXT = {
         "zh": "力量：{today:.1f} kg（最佳 {ref:.1f} kg 的 {pct:.0f}%）。重量调整为 {factor:.0f}%。",
     },
     "hr_ok": {
-        "es": "Pulso: {today:.0f} bpm, en tu rango habitual ({base:.0f}).",
-        "en": "Pulse: {today:.0f} bpm, within your usual range ({base:.0f}).",
-        "zh": "脉搏：{today:.0f} bpm，处于你的常规范围（{base:.0f}）。",
+        "es": "Pulso: {today:.0f} bpm, dentro de lo esperado en reposo ({low}–{high}, típico ≈{base:.0f}).",
+        "en": "Pulse: {today:.0f} bpm, within the expected resting range ({low}–{high}, typical ≈{base:.0f}).",
+        "zh": "脉搏：{today:.0f} bpm，处于静息正常范围（{low}–{high}，典型约 {base:.0f}）。",
     },
     "hr_high": {
-        "es": "Pulso: {today:.0f} bpm, {delta:+.0f} sobre tu habitual ({base:.0f}): recuperación incompleta. Menos carga{extra}.",
-        "en": "Pulse: {today:.0f} bpm, {delta:+.0f} above your usual ({base:.0f}): incomplete recovery. Lighter loads{extra}.",
-        "zh": "脉搏：{today:.0f} bpm，比平时（{base:.0f}）高 {delta:+.0f}：恢复不足。降低负荷{extra}。",
+        "es": "Pulso: {today:.0f} bpm, alto para estar en reposo (esperado {low}–{high}): recuperación incompleta. Menos carga{extra}.",
+        "en": "Pulse: {today:.0f} bpm, high for rest (expected {low}–{high}): incomplete recovery. Lighter loads{extra}.",
+        "zh": "脉搏：{today:.0f} bpm，静息时偏高（正常 {low}–{high}）：恢复不足。降低负荷{extra}。",
     },
     "temp_ok": {
         "es": "Temperatura: {today:.1f} °C, normal para ti ({base:.1f} °C).",
@@ -164,6 +164,7 @@ class Readiness:
     strength_ratio: float | None = None
     new_strength_record: bool = False
     hr_baseline: float | None = None
+    hr_range: tuple[int, int] | None = None
     temp_baseline: float | None = None
     readings: Readings = field(default_factory=Readings)
 
@@ -189,6 +190,7 @@ class Readiness:
             "peak_force_kg": self.readings.peak_force_kg,
             "temperature_c": self.readings.temperature_c,
             "hr_baseline_bpm": self.hr_baseline,
+            "hr_range_bpm": list(self.hr_range) if self.hr_range else None,
             "temp_baseline_c": self.temp_baseline,
             "strength_reference_kg": self.strength_reference_kg,
             "strength_ratio": self.strength_ratio,
@@ -221,7 +223,29 @@ def _median(values: list[float]) -> float | None:
     return round(statistics.median(values), 2) if values else None
 
 
-def evaluate(session: Session, user: User, readings: Readings, phase: str | None, language: str = "EN") -> Readiness:
+HR_NORMAL_RANGE = (60, 100)
+# Average resting pulse of adult women by age (AHA reference tables).
+_HR_BY_AGE = [(25, 76), (35, 74), (45, 76), (55, 75), (65, 75), (200, 74)]
+
+
+def expected_resting_hr(age: int | None = None, modality: str | None = None) -> float:
+    value = 75.0
+    if age:
+        value = float(next(avg for limit, avg in _HR_BY_AGE if age <= limit))
+    if (modality or "").upper() == "GESTATIONAL":
+        value += 12.0
+    return value
+
+
+def evaluate(
+    session: Session,
+    user: User,
+    readings: Readings,
+    phase: str | None,
+    language: str = "EN",
+    age: int | None = None,
+    modality: str | None = None,
+) -> Readiness:
     """Compare today's readings with the athlete's references (no writes)."""
     history = _history(session, user)
     now = datetime.now(timezone.utc)
@@ -255,27 +279,34 @@ def evaluate(session: Session, user: User, readings: Readings, phase: str | None
                     _t("force_low", language, today=today, ref=reference, pct=ratio * 100, factor=result.force_factor * 100)
                 )
 
-    # --- Pulse: usual resting pulse ----------------------------------------
-    pulses = [r.heart_rate_bpm for r in history if r.heart_rate_bpm][:BASELINE_READINGS]
-    result.hr_baseline = _median(pulses)
+    # --- Pulse: EXPECTED resting pulse (not her history) -------------------
+    # A device history can hold bad readings (finger moving), so the reference
+    # is the normal adult resting range, 60-100 bpm, centred on the average for
+    # her age; pregnancy raises the resting pulse ~10-15 bpm.
+    expected = expected_resting_hr(age, modality)
+    low, high = HR_NORMAL_RANGE
+    if (modality or "").upper() == "GESTATIONAL":
+        high += 10
+    result.hr_baseline = expected
+    result.hr_range = (low, high)
     hr = readings.heart_rate_bpm
     if hr is not None:
-        base = result.hr_baseline if result.hr_baseline is not None else min(hr, 75.0)
-        result.hr_baseline = round(base, 1)
-        delta = hr - base
-        if hr >= 100 or delta > 20:
+        over = hr - high
+        if over > 10:
             result.hr_factor, result.sets_delta, result.rest_extra_s = 0.80, max(result.sets_delta, 1), max(result.rest_extra_s, 45)
             extra = _t("less_sets", language)
-        elif delta > 10:
+        elif over > 0:
             result.hr_factor, result.sets_delta, result.rest_extra_s = 0.90, max(result.sets_delta, 1), max(result.rest_extra_s, 30)
             extra = _t("less_sets", language)
-        elif delta > 5:
+        elif hr > high - 10:
             result.hr_factor, result.rest_extra_s = 0.95, max(result.rest_extra_s, 15)
             extra = _t("more_rest", language)
         else:
             extra = None
         result.reasons.append(
-            _t("hr_ok", language, today=hr, base=base) if extra is None else _t("hr_high", language, today=hr, base=base, delta=delta, extra=extra)
+            _t("hr_ok", language, today=hr, low=low, high=high, base=expected)
+            if extra is None
+            else _t("hr_high", language, today=hr, low=low, high=high, base=expected, extra=extra)
         )
 
     # --- Temperature: usual ocular temperature, phase-aware ----------------
