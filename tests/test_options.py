@@ -3,7 +3,7 @@ from syncfit_database import AppOption
 
 from app.db import get_database
 from app.main import app
-from app.services.options import DEFAULT_OPTIONS, ensure_default_options
+from app.services.options import DEFAULT_OPTIONS, ensure_default_options, incompatible_training_pair
 
 client = TestClient(app)
 
@@ -24,6 +24,32 @@ def test_label_follows_the_requested_language():
     with TestClient(app) as started:
         body = started.get("/api/v1/options", params={"language": "ES"}).json()
     assert body["objective"][0]["label"] == "Fuerza"
+
+
+def test_routine_rejects_incompatible_muscle_and_zone():
+    with get_database().session_scope() as session:
+        ensure_default_options(session)
+
+    options = client.get("/api/v1/options").json()["muscle_group_isolated"]
+    quadriceps = next(option for option in options if option["value"] == "QUADRICEPS")
+    assert set(quadriceps["zones"]) == {"LOWER_BODY", "FULL_LEG", "FULL_BODY"}
+    for groups in (
+        ["QUADRICEPS", "UPPER_BODY"],
+        ["UPPER_BODY", "QUADRICEPS"],
+        ["QUADRICEPS", "FULL_BODY", "UPPER_BODY"],
+    ):
+        response = client.post("/api/v1/routines", json={"muscle_groups": groups})
+        assert response.status_code == 422
+        assert response.json()["detail"] == {
+            "code": "incompatible_training_groups", "muscle": "QUADRICEPS", "zone": "UPPER_BODY",
+        }
+
+    with get_database().session() as session:
+        assert incompatible_training_pair(session, ["QUADRICEPS", "LOWER_BODY"]) is None
+        assert incompatible_training_pair(session, ["BICEPS", "QUADRICEPS"]) is None
+        row = session.query(AppOption).filter_by(category="muscle_group_isolated", value="QUADRICEPS").one()
+        row.meta = {"zones": []}
+        assert incompatible_training_pair(session, ["QUADRICEPS", "LOWER_BODY"]) == ("QUADRICEPS", "LOWER_BODY")
 
 
 def test_seeding_is_idempotent_and_keeps_database_edits():

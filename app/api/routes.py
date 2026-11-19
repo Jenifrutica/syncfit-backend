@@ -80,6 +80,12 @@ def _ensure_known_groups(groups: Any, session: Session) -> None:
             status_code=422,
             detail=f"unknown muscle groups: {', '.join(unknown)}",
         )
+    conflict = options_service.incompatible_training_pair(session, values)
+    if conflict:
+        muscle, zone = conflict
+        raise HTTPException(status_code=422, detail={
+            "code": "incompatible_training_groups", "muscle": muscle, "zone": zone,
+        })
 
 
 @router.get("/health")
@@ -1096,6 +1102,11 @@ def _clean_meta(meta: Any) -> dict[str, Any] | None:
         return None
     if not isinstance(meta, dict):
         raise HTTPException(status_code=422, detail="meta must be an object")
+    if "zones" in meta and (
+        not isinstance(meta["zones"], list)
+        or not all(isinstance(zone, str) and zone.strip() for zone in meta["zones"])
+    ):
+        raise HTTPException(status_code=422, detail="meta.zones must contain zone identifiers")
     for key in ("sets", "reps", "rest_compound", "rest_iso"):
         if key in meta and not (isinstance(meta[key], (int, float)) and 1 <= meta[key] <= 600):
             raise HTTPException(status_code=422, detail=f"meta.{key} must be a number between 1 and 600")
