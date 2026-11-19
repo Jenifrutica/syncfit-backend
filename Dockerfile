@@ -28,5 +28,8 @@ USER appuser
 EXPOSE 8000
 
 # --proxy-headers: behind the ALB, so rate limiting sees the real client IP.
+# WebSocket pings every 30 s with 60 s to answer: the prototype on a weak
+# campus Wi-Fi answers late and the default 20 s timeout kept dropping it.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips=*"]
+     "--proxy-headers", "--forwarded-allow-ips=*", \
+     "--ws-ping-interval", "30", "--ws-ping-timeout", "60"]
