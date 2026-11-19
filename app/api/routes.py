@@ -624,6 +624,14 @@ def set_supplement_intake(
     taken = bool(payload.get("taken", False))
     if not supplement_id:
         raise HTTPException(status_code=422, detail="supplement_id required")
+    servings_in = payload.get("servings")
+    if servings_in is not None:
+        try:
+            servings_in = int(servings_in)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="servings must be an integer") from None
+        if not 1 <= servings_in <= 10:
+            raise HTTPException(status_code=422, detail="servings must be 1..10")
     row = (
         session.query(SupplementIntake)
         .filter_by(user_id=user.id, supplement_id=supplement_id, date=date.fromisoformat(date_str))
@@ -635,12 +643,17 @@ def set_supplement_intake(
             supplement_id=supplement_id,
             date=date.fromisoformat(date_str),
             taken=taken,
+            servings=servings_in or 1,
         )
         session.add(row)
     else:
         row.taken = taken
+        if servings_in is not None:
+            row.servings = servings_in
+        elif not taken:
+            row.servings = 1  # un-marking resets the count for the day
     session.commit()
-    return {"supplement_id": supplement_id, "date": date_str, "taken": taken}
+    return {"supplement_id": supplement_id, "date": date_str, "taken": taken, "servings": row.servings or 1}
 
 
 @router.get("/supplement-intakes")
@@ -653,7 +666,7 @@ def get_supplement_intakes(
     if date_str:
         query = query.filter_by(date=date.fromisoformat(date_str))
     return [
-        {"supplement_id": row.supplement_id, "date": row.date.isoformat(), "taken": row.taken}
+        {"supplement_id": row.supplement_id, "date": row.date.isoformat(), "taken": row.taken, "servings": row.servings or 1}
         for row in query.all()
     ]
 
