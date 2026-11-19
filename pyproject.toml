@@ -19,6 +19,7 @@ dependencies = [
     "qrcode[pil]>=7.4",
     "google-auth>=2.0",
     "requests>=2.0",
+    "tzdata>=2024.1",  # IANA zones for zoneinfo on slim containers
     "syncfit-database @ git+https://github.com/Jenifrutica/syncfit-database.git",
     "syncfit-contracts @ git+https://github.com/Jenifrutica/syncfit-contracts.git#subdirectory=python",
     "syncfit-core @ git+https://github.com/Jenifrutica/syncfit-core.git",

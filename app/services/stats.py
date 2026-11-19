@@ -4,22 +4,36 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 from syncfit_database import Profile, SessionRecord, User
+
+from ..config import settings
 
 DEFAULT_WEEKLY_GOAL = 4
 DEFAULT_REST_ALLOWANCE = 3
 
 
-def _utc_today() -> date:
-    return datetime.now(timezone.utc).date()
+def _zone() -> ZoneInfo:
+    return ZoneInfo(settings.app_timezone)
+
+
+def _local_date(moment: datetime) -> date:
+    """Calendar day of a stored timestamp in the app's time zone (naive = UTC)."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(_zone()).date()
+
+
+def _local_today() -> date:
+    return datetime.now(_zone()).date()
 
 
 def compute_stats(session: Session, user: User, profile: Profile | None, today: date | None = None) -> dict:
-    today = today or _utc_today()
+    today = today or _local_today()
     records = session.query(SessionRecord).filter_by(user_id=user.id).all()
-    training_dates = {record.started_at.date() for record in records}
+    training_dates = {_local_date(record.started_at) for record in records}
 
     goal = (profile.weekly_training_goal if profile else None) or DEFAULT_WEEKLY_GOAL
     allowance = (profile.rest_days_allowance if profile else None)
