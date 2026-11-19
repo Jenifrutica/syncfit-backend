@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi.testclient import TestClient
-from syncfit_database import User
+from syncfit_database import ShareLink, User
 
 from app.config import settings
 from app.db import get_database
@@ -541,3 +541,19 @@ def test_profile_returns_weekly_goal_and_rest_days():
     me = client.get("/api/v1/profile", headers=_auth(token)).json()
     assert me["weekly_training_goal"] == 5
     assert me["rest_days_allowance"] == 2
+
+
+def test_expired_share_denies_guest_access_and_preserves_owner_session():
+    owner = _auth(_register("expired-share@example.com"))
+    share = client.post("/api/v1/shares", headers=owner, json={"permissions": ["PROGRESS"]}).json()
+    deadline = datetime.fromisoformat(share["expires_at"])
+    assert timedelta(days=7, seconds=-10) < deadline - datetime.now(timezone.utc) <= timedelta(days=7)
+    path = f"/api/v1/shared/{share['token']}"
+    assert client.get(path).status_code == 200
+    with get_database().session() as session:
+        row = session.query(ShareLink).filter_by(token=share["token"]).one()
+        row.created_at = datetime.now(timezone.utc) - timedelta(days=7)
+        session.commit()
+    assert client.get(path).status_code == 404
+    listed = client.get("/api/v1/shares", headers=owner).json()
+    assert next(link for link in listed if link["token"] == share["token"])["active"] is False

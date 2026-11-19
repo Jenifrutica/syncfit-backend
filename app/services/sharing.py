@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 from syncfit_contracts import SharedProfile, ShareLink as ShareLinkContract
@@ -12,6 +12,17 @@ from syncfit_database import Profile, Routine, ShareLink, SupplementIntake, User
 from .calendar import build_calendar
 from .cycles import compute_timeline
 from .stats import compute_stats
+
+
+SHARE_LIFETIME = timedelta(days=7)
+
+
+def expires_at(link: ShareLink) -> datetime:
+    created = link.created_at
+    # SQLite returns naive timestamps for UTC database columns.
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return created + SHARE_LIFETIME
 
 
 def _value(item: object) -> str:
@@ -68,7 +79,8 @@ def serialize_link(link: ShareLink) -> dict:
         "role": link.role,
         "label": link.label,
         "permissions": list(link.permissions or []),
-        "active": link.active,
+        "active": link.active and datetime.now(timezone.utc) < expires_at(link),
+        "expires_at": expires_at(link).isoformat(),
         "created_at": link.created_at.isoformat() if link.created_at else None,
         "updated_at": link.updated_at.isoformat() if link.updated_at else None,
     }
@@ -107,7 +119,7 @@ def build_shared_profile(
     session: Session, token: str, language: str = "EN"
 ) -> SharedProfile | None:
     link = session.query(ShareLink).filter_by(token=token, active=True).one_or_none()
-    if link is None:
+    if link is None or datetime.now(timezone.utc) >= expires_at(link):
         return None
     owner = session.get(User, link.owner_user_id)
     if owner is None:
